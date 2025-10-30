@@ -1,0 +1,37 @@
+# Binaries
+/bin/
+/build/
+/dist/
+/out/
+
+# Dependency directories
+vendor/
+Gopkg.lock
+Gopkg.toml
+
+# Editor/project files
+*.swp
+*.swo
+.idea/
+.vscode/
+*.code-workspace
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Go test/cache
+# .test files are ignored because they are compiled test binaries produced by "go test" (one per package in module mode).
+*.test
+*.coverprofile
+
+# Go module cache and local overrides
+/go.sum
+/go.mod
+
+# Misc
+.env
+.env.*
