@@ -1,2 +1,0 @@
-// Package handlers
-package handlers

@@ -13,19 +13,9 @@ type Link struct {
 	ID          uuid.UUID        `json:"id"`
 	Code        string           `json:"code"`
 	OriginalUrl string           `json:"original_url"`
-	UserID      uuid.UUID        `json:"user_id"`
+	UserID      string           `json:"user_id"`
 	Clicks      *int32           `json:"clicks"`
 	ExpiresAt   pgtype.Timestamp `json:"expires_at"`
 	CreatedAt   pgtype.Timestamp `json:"created_at"`
 	UpdatedAt   pgtype.Timestamp `json:"updated_at"`
-}
-
-type User struct {
-	ID        uuid.UUID        `json:"id"`
-	ClerkID   string           `json:"clerk_id"`
-	Email     string           `json:"email"`
-	Username  *string          `json:"username"`
-	AvatarUrl *string          `json:"avatar_url"`
-	CreatedAt pgtype.Timestamp `json:"created_at"`
-	UpdatedAt pgtype.Timestamp `json:"updated_at"`
 }

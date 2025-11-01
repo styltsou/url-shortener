@@ -39,7 +39,7 @@ func NewLinkService(queries *db.Queries) *LinkService {
 	return &LinkService{queries: queries}
 }
 
-func (s *LinkService) CreateShortLink(ctx context.Context, userID uuid.UUID, originalURL string) (db.Link, error) {
+func (s *LinkService) CreateShortLink(ctx context.Context, userID string, originalURL string) (db.Link, error) {
 	const (
 		codeLen     = 9
 		maxAttempts = 3 // 62^7 = 3.5T combinations; collisions are extremely rare
@@ -75,11 +75,11 @@ func (s *LinkService) CreateShortLink(ctx context.Context, userID uuid.UUID, ori
 	return db.Link{}, fmt.Errorf("failed to create link after %d attempts", maxAttempts)
 }
 
-func (s *LinkService) ListAllLinks(ctx context.Context, userID uuid.UUID) ([]db.Link, error) {
+func (s *LinkService) ListAllLinks(ctx context.Context, userID string) ([]db.Link, error) {
 	return s.queries.ListUserLinks(ctx, userID)
 }
 
-func (s *LinkService) GetLinkByID(ctx context.Context, id uuid.UUID, userID uuid.UUID) (db.Link, error) {
+func (s *LinkService) GetLinkByID(ctx context.Context, id uuid.UUID, userID string) (db.Link, error) {
 	return s.queries.GetLinkByIdAndUser(ctx, db.GetLinkByIdAndUserParams{
 		ID:     id,
 		UserID: userID,
@@ -94,7 +94,7 @@ func (s *LinkService) GetOriginalURL(ctx context.Context, code string) (db.GetLi
 // This will stay empty untill i actuall see my use case
 func (s *LinkService) UpdateLink(ctx context.Context) {}
 
-func (s *LinkService) DeleteLink(ctx context.Context, id uuid.UUID, userID uuid.UUID) error {
+func (s *LinkService) DeleteLink(ctx context.Context, id uuid.UUID, userID string) error {
 	return s.queries.DeleteLink(ctx, db.DeleteLinkParams{
 		ID:     id,
 		UserID: userID,

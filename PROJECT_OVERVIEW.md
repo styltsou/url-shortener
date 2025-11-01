@@ -19,14 +19,14 @@ Implement a backend service that allows:
 
 ### 🧱 **Core Features**
 
-| Feature             | Description                                                                                          |
-| ------------------- | ---------------------------------------------------------------------------------------------------- |
-| **Shorten URL**     | Authenticated users can submit a long URL and receive a unique short code (e.g., `short.ly/abc123`). |
-| **Redirect**        | Visiting `/{code}` redirects to the original long URL.                                               |
-| **User Management** | Integrated with Clerk authentication. Each link belongs to a specific user.                          |
-| **List User Links** | Authenticated users can list and manage their own shortened links.                                   |
-| **Basic Analytics** | Track total click count per link.                                                                    |
-| **Error Handling**  | Handle invalid codes, expired links, and validation errors gracefully.                               |
+| Feature             | Description                                                                                                                        |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| **Shorten URL**     | Authenticated users can submit a long URL and receive a unique short code (e.g., `short.ly/abc123`).                               |
+| **Redirect**        | Visiting `/{code}` redirects to the original long URL.                                                                             |
+| **User Management** | Integrated with Clerk authentication. Each link belongs to a specific user (identified by Clerk ID). No local user storage needed. |
+| **List User Links** | Authenticated users can list and manage their own shortened links.                                                                 |
+| **Basic Analytics** | Track total click count per link.                                                                                                  |
+| **Error Handling**  | Handle invalid codes, expired links, and validation errors gracefully.                                                             |
 
 ---
 
@@ -46,35 +46,28 @@ Implement a backend service that allows:
 
 ## 🧩 Database Models
 
-### 1. **User**
-
-Stores user metadata synced from Clerk.
-
-| Field        | Type        | Notes                  |
-| ------------ | ----------- | ---------------------- |
-| `id`         | UUID / text | Clerk ID (primary key) |
-| `email`      | text        | User’s email           |
-| `created_at` | timestamp   | Record creation time   |
+> **Note:** Following Clerk's best practices, we don't store a users table. Clerk IDs are stored directly in the links table. This is recommended when you don't need extra user metadata or user-to-user relationships.
 
 ---
 
-### 2. **Link**
+### 1. **Link**
 
 Core table for shortened links.
 
-| Field          | Type                 | Notes                    |
-| -------------- | -------------------- | ------------------------ |
-| `id`           | serial / UUID        | Primary key              |
-| `code`         | varchar(10)          | Unique short identifier  |
-| `original_url` | text                 | The long destination URL |
-| `user_id`      | FK → users.id        | Owner                    |
-| `clicks`       | int                  | Total clicks             |
-| `created_at`   | timestamp            | Creation time            |
-| `expires_at`   | timestamp (nullable) | Optional expiration date |
+| Field          | Type                 | Notes                        |
+| -------------- | -------------------- | ---------------------------- |
+| `id`           | UUID                 | Primary key                  |
+| `code`         | varchar(10)          | Unique short identifier      |
+| `original_url` | text                 | The long destination URL     |
+| `user_id`      | varchar(255)         | Clerk user ID (no FK needed) |
+| `clicks`       | int                  | Total clicks                 |
+| `created_at`   | timestamp            | Creation time                |
+| `expires_at`   | timestamp (nullable) | Optional expiration date     |
+| `updated_at`   | timestamp (nullable) | Last update time             |
 
 ---
 
-### 3. **ClickEvent** _(optional in MVP, for future analytics)_
+### 2. **ClickEvent** _(optional in MVP, for future analytics)_
 
 Stores each click for analytics and aggregation.
 
@@ -101,7 +94,6 @@ Stores each click for analytics and aggregation.
 | `/api/v1/links/{code}` | GET    | ✅   | Get link details and stats        |
 | `/api/v1/links/{code}` | PATCH  | ✅   | Update link (custom code, expiry) |
 | `/api/v1/links/{code}` | DELETE | ✅   | Delete a link                     |
-| `/api/v1/me`           | GET    | ✅   | Get current user profile          |
 
 ---
 
@@ -207,7 +199,7 @@ that queries ClickHouse directly for insights.
 
 When load grows:
 
-- Split services: `api`, `analytics`, `auth-sync`.
+- Split services: `api`, `analytics`.
 - Use **message queues (Kafka / NATS)** between services.
 - Deploy via Docker + Kubernetes.
 - Add **Prometheus + Grafana** for metrics.
@@ -218,15 +210,15 @@ When load grows:
 
 Building this project helps you learn:
 
-| Skill Area                  | Concepts Learned                                        |
-| --------------------------- | ------------------------------------------------------- |
-| **Go backend fundamentals** | Routing, handlers, dependency injection, testing        |
-| **Persistence**             | SQL schema design, migrations, indexing                 |
-| **Auth integration**        | Clerk tokens, middleware, user sync via webhooks        |
-| **Caching**                 | Redis for high-speed lookups                            |
-| **Event-driven design**     | Kafka or NATS for analytics                             |
-| **Observability**           | Logging, metrics, tracing                               |
-| **System design**           | Scalability, separation of concerns, service boundaries |
+| Skill Area                  | Concepts Learned                                               |
+| --------------------------- | -------------------------------------------------------------- |
+| **Go backend fundamentals** | Routing, handlers, dependency injection, testing               |
+| **Persistence**             | SQL schema design, migrations, indexing                        |
+| **Auth integration**        | Clerk tokens, middleware, direct Clerk ID usage (no user sync) |
+| **Caching**                 | Redis for high-speed lookups                                   |
+| **Event-driven design**     | Kafka or NATS for analytics                                    |
+| **Observability**           | Logging, metrics, tracing                                      |
+| **System design**           | Scalability, separation of concerns, service boundaries        |
 
 ---
 

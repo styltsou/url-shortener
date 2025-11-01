@@ -19,7 +19,7 @@ WHERE id = $1 AND user_id = $2
 
 type DeleteLinkParams struct {
 	ID     uuid.UUID `json:"id"`
-	UserID uuid.UUID `json:"user_id"`
+	UserID string    `json:"user_id"`
 }
 
 func (q *Queries) DeleteLink(ctx context.Context, arg DeleteLinkParams) error {
@@ -35,7 +35,7 @@ LIMIT 1
 
 type GetLinkByIdAndUserParams struct {
 	ID     uuid.UUID `json:"id"`
-	UserID uuid.UUID `json:"user_id"`
+	UserID string    `json:"user_id"`
 }
 
 func (q *Queries) GetLinkByIdAndUser(ctx context.Context, arg GetLinkByIdAndUserParams) (Link, error) {
@@ -98,7 +98,7 @@ WHERE user_id = $1
 ORDER BY created_at DESC
 `
 
-func (q *Queries) ListUserLinks(ctx context.Context, userID uuid.UUID) ([]Link, error) {
+func (q *Queries) ListUserLinks(ctx context.Context, userID string) ([]Link, error) {
 	rows, err := q.db.Query(ctx, listUserLinks, userID)
 	if err != nil {
 		return nil, err
@@ -135,9 +135,9 @@ RETURNING id, code, original_url, user_id, clicks, expires_at, created_at, updat
 `
 
 type TryCreateLinkParams struct {
-	Code        string    `json:"code"`
-	OriginalUrl string    `json:"original_url"`
-	UserID      uuid.UUID `json:"user_id"`
+	Code        string `json:"code"`
+	OriginalUrl string `json:"original_url"`
+	UserID      string `json:"user_id"`
 }
 
 func (q *Queries) TryCreateLink(ctx context.Context, arg TryCreateLinkParams) (Link, error) {
@@ -168,7 +168,7 @@ RETURNING id, code, original_url, user_id, clicks, expires_at, created_at, updat
 
 type UpdateLinkParams struct {
 	ID        uuid.UUID        `json:"id"`
-	UserID    uuid.UUID        `json:"user_id"`
+	UserID    string           `json:"user_id"`
 	Code      *string          `json:"code"`
 	ExpiresAt pgtype.Timestamp `json:"expires_at"`
 }
