@@ -1,4 +1,99 @@
-# React + TypeScript + Vite
+# URL Shortener - Client App
+
+React + TypeScript + Vite application for the URL shortener dashboard.
+
+## Architecture
+
+This client app is designed to run on a subdomain (`app.my-domain.com`) to separate concerns:
+
+- **Marketing Site**: `my-domain.com` (Astro) - Reserved for marketing website
+- **App Dashboard**: `app.my-domain.com` (This React app) - User dashboard and link management
+- **Short Links**: `my-domain.com/[shortcode]` - Handled by backend redirect service
+
+This architecture avoids routing conflicts and provides clean separation of concerns.
+
+## Setup
+
+### 1. Install Dependencies
+
+```bash
+pnpm install
+```
+
+### 2. Environment Variables
+
+Create a `.env` file in the client directory:
+
+```bash
+cp .env.example .env
+```
+
+Then add your Clerk publishable key:
+
+```env
+VITE_CLERK_PUBLISHABLE_KEY=pk_test_...
+VITE_CLERK_SIGN_IN_URL=/login
+VITE_CLERK_SIGN_UP_URL=/login
+VITE_CLERK_AFTER_SIGN_IN_URL=/
+VITE_CLERK_AFTER_SIGN_UP_URL=/
+```
+
+Get your Clerk keys from [Clerk Dashboard](https://dashboard.clerk.com).
+
+### 3. Configure Clerk Dashboard for OAuth-Only Authentication
+
+Since this app only supports Google and GitHub OAuth (no email/password), you need to configure this in the Clerk Dashboard:
+
+1. Go to [Clerk Dashboard](https://dashboard.clerk.com) → Your Application
+2. Navigate to **User & Authentication** → **Social Connections**
+3. Enable **Google** and **GitHub** OAuth providers
+4. Navigate to **User & Authentication** → **Email, Phone, Username**
+5. **Disable** Email/Password authentication (or leave it disabled)
+
+This ensures users can only sign in/sign up using Google or GitHub. With OAuth, sign-in and sign-up are the same flow - new users will automatically be created on first OAuth login.
+
+### 4. Run Development Server
+
+```bash
+pnpm dev
+```
+
+## Routes
+
+- `/` - Main dashboard showing all user links (protected)
+- `/[shortcode]` - Individual link detail view (protected)
+- `/login` - Clerk authentication page
+
+## Tech Stack
+
+- **React 19** - UI framework
+- **TypeScript** - Type safety
+- **Vite** - Build tool and dev server
+- **TanStack Router** - File-based routing
+- **Clerk** - Authentication
+- **Tailwind CSS** - Styling
+- **TanStack Query** - Data fetching
+- **Zustand** - State management
+
+## Project Structure
+
+```
+src/
+├── routes/           # File-based routes (TanStack Router)
+│   ├── __root.tsx   # Root layout with ClerkProvider
+│   ├── index.tsx    # Home route - Links dashboard
+│   ├── $shortcode.tsx  # Link detail page
+│   └── login.tsx    # Login page
+├── components/      # Reusable components
+│   ├── ui/          # shadcn/ui components
+│   └── ProtectedRoute.tsx  # Auth wrapper component
+├── lib/             # Utilities
+└── router.tsx       # Router configuration
+```
+
+---
+
+## Original Template Info
 
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
 

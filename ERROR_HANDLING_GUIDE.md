@@ -1,393 +1,579 @@
-# 🚨 Error Handling Guide - Production Grade
+# 🚨 Error Handling Guide
 
-A comprehensive guide for implementing production-grade error handling in the URL Shortener project.
+A guide for implementing error handling in the URL Shortener project, following Go best practices and industry patterns.
 
 ---
 
 ## 📋 Table of Contents
 
-1. [Current State (MVP)](#current-state-mvp)
-2. [When to Add Custom Errors](#when-to-add-custom-errors)
-3. [Custom Error Patterns](#custom-error-patterns)
-4. [Migration Strategy](#migration-strategy)
-5. [Best Practices](#best-practices)
-6. [Error Catalog](#error-catalog)
+1. [Architecture Overview](#architecture-overview)
+2. [Sentinel Errors](#sentinel-errors)
+3. [Error Codes](#error-codes)
+4. [Handler Patterns](#handler-patterns)
+5. [When to Use errors Package vs fmt.Errorf()](#when-to-use-errors-package-vs-fmterrorf)
+6. [Best Practices](#best-practices)
+7. [Error Catalog](#error-catalog)
 
 ---
 
-## Current State (MVP)
+## Architecture Overview
 
-**What we have now:**
+We use a **simple, direct approach**:
 
-```go
-// Service layer
-func (s *LinkService) CreateShortLink(...) (db.Link, error) {
-    // ...
-    if err != nil {
-        return db.Link{}, fmt.Errorf("failed to create link: %w", err)
-    }
-}
+1. **Service Layer**: Returns standard Go errors (sentinel errors + wrapped errors)
+2. **Handler Layer**: Checks errors with `errors.Is()` and writes HTTP responses directly
+
+This follows Go idioms: services don't know about HTTP, handlers map errors to HTTP responses directly where they occur.
+
+### Flow
+
+```
+Service Layer          Handler Layer          HTTP Response
+─────────────          ─────────────          ────────────
+LinkNotFound  →  errors.Is()  →  ErrorResponse  →  JSON Response
+(sentinel error)     (check)         (DTO)            (with code)
 ```
 
-**Pros:**
-
-- Simple, quick to implement
-- Standard library only
-- Good enough for MVP
-
-**Cons:**
-
-- Handlers must inspect wrapped errors (e.g., `errors.Is(err, sql.ErrNoRows)`)
-- No consistent error response format
-- Hard to add metadata (error codes, user messages, etc.)
+**Key principle**: Handlers handle errors directly where they occur. No context passing, no middleware magic.
 
 ---
 
-## When to Add Custom Errors
+## Sentinel Errors
 
-Add custom errors when you need:
+**Sentinel errors** are predefined error values in Go that you check for using `errors.Is()`. They're called "sentinels" because they act as markers or flags that indicate a specific error condition. Think of them as **error constants** - you define them once, and then check for them throughout your code.
 
-✅ **Consistent API error responses**
+### Definition
 
-- Standardized error codes (e.g., `LINK_NOT_FOUND`, `INVALID_URL`)
-- User-friendly messages separate from internal details
-
-✅ **Rich error metadata**
-
-- HTTP status codes
-- Validation field names
-- Retry information
-
-✅ **Better handler logic**
-
-- Stop checking `errors.Is(err, sql.ErrNoRows)` everywhere
-- One place to map errors → HTTP responses
-
-✅ **Client SDK generation**
-
-- Typed error responses for API clients
-
----
-
-## Custom Error Patterns
-
-### Pattern 1: Sentinel Errors (Simplest)
-
-**When to use:** Simple, well-known errors without metadata.
+**Location**: `pkg/errors/errors.go`
 
 ```go
-// pkg/errors/errors.go
-package errors
-
-import "errors"
-
+// Sentinel errors - use these in services, check with errors.Is()
 var (
-    ErrLinkNotFound     = errors.New("link not found")
-    ErrInvalidURL       = errors.New("invalid URL")
-    ErrCodeTaken        = errors.New("code already taken")
-    ErrUnauthorized     = errors.New("unauthorized")
-    ErrLinkExpired      = errors.New("link expired")
+    LinkNotFound = errors.New("Link not found")
+    InvalidURL   = errors.New("Invalid URL")
+    InternalError = errors.New("Internal server error")
 )
 ```
 
-**Usage:**
+This creates **single error values** that you can check for later. The string message is just for debugging - what matters is the **identity** of the error.
+
+### Usage in Services
+
+In your service layer (`pkg/service/link.go`):
 
 ```go
-// Service
-func (s *LinkService) GetLink(ctx context.Context, code string) (db.Link, error) {
-    link, err := s.queries.GetLinkForRedirect(ctx, code)
+func (s *LinkService) GetLinkByID(ctx context.Context, id uuid.UUID, userID string) (db.Link, error) {
+    link, err := s.queries.GetLinkByIdAndUser(ctx, db.GetLinkByIdAndUserParams{
+        ID:     id,
+        UserID: userID,
+    })
     if err != nil {
         if errors.Is(err, sql.ErrNoRows) {
-            return db.Link{}, apperrors.ErrLinkNotFound
+            // Wrap the sentinel error with context
+            return db.Link{}, fmt.Errorf("%w: %v", apperrors.LinkNotFound, err)
         }
+        // Wrap other errors with context
         return db.Link{}, fmt.Errorf("failed to get link: %w", err)
     }
-
-    if link.ExpiresAt.Valid && link.ExpiresAt.Time.Before(time.Now()) {
-        return db.Link{}, apperrors.ErrLinkExpired
-    }
-
     return link, nil
 }
+```
 
-// Handler
-func (h *Handler) GetLink(w http.ResponseWriter, r *http.Request) {
-    link, err := h.service.GetLink(r.Context(), code)
-    if err != nil {
-        switch {
-        case errors.Is(err, apperrors.ErrLinkNotFound):
-            http.Error(w, "Link not found", http.StatusNotFound)
-        case errors.Is(err, apperrors.ErrLinkExpired):
-            http.Error(w, "Link expired", http.StatusGone)
-        default:
-            h.logger.Error("get link failed", "error", err)
-            http.Error(w, "Internal error", http.StatusInternalServerError)
-        }
-        return
-    }
-    json.NewEncoder(w).Encode(link)
+**Key points:**
+- Service layer doesn't know about HTTP
+- Service returns Go errors (sentinel errors)
+- Uses `fmt.Errorf("%w", ...)` to wrap errors with context
+
+### Checking for Sentinel Errors
+
+You use `errors.Is()` to check if an error is (or wraps) a sentinel error:
+
+```go
+err := service.GetLinkByID(ctx, id, userID)
+if errors.Is(err, apperrors.LinkNotFound) {
+    // Handle "link not found" case
 }
 ```
+
+**Why `errors.Is()`?**
+- Works even when errors are wrapped: `fmt.Errorf("context: %w", LinkNotFound)`
+- Checks the entire error chain
+- Standard Go idiom
+
+### Why Use Sentinel Errors?
+
+#### 1. Type-Safe Error Checking
+
+```go
+// ✅ Good - type-safe, checked at compile time
+if errors.Is(err, LinkNotFound) {
+    // ...
+}
+
+// ❌ Bad - string comparison, error-prone
+if err.Error() == "link not found" {
+    // What if message changes?
+}
+```
+
+#### 2. Works with Error Wrapping
+
+Go's error wrapping (`fmt.Errorf("%w", err)`) preserves the sentinel error:
+
+```go
+// Service wraps error with context
+return fmt.Errorf("failed to get link %s: %w", id, LinkNotFound)
+
+// Handler can still check for it
+if errors.Is(err, LinkNotFound) {  // ✅ Still works!
+    // ...
+}
+```
+
+#### 3. Separation of Concerns
+
+- **Service layer**: Returns Go errors (sentinel errors)
+- **Handler layer**: Maps Go errors to HTTP responses (error codes)
+
+Services don't know about HTTP, handlers don't know about business logic.
+
+#### 4. Testable
+
+Easy to test:
+
+```go
+// In tests
+mockService := &mockLinkService{
+    GetLinkByIDFunc: func(...) (db.Link, error) {
+        return db.Link{}, apperrors.LinkNotFound
+    },
+}
+
+// Test can check
+if !errors.Is(err, apperrors.LinkNotFound) {
+    t.Errorf("Expected LinkNotFound")
+}
+```
+
+### When to Create Sentinel Errors
+
+Create a sentinel error when:
+
+✅ **The error is checked in multiple places**
+```go
+// Used in GetLinkByID, DeleteLink, GetOriginalURL
+var LinkNotFound = errors.New("Link not found")
+```
+
+✅ **The error needs special handling**
+```go
+// Frontend needs to show URL validation error differently
+var InvalidURL = errors.New("Invalid URL")
+```
+
+✅ **The error represents a domain concept**
+```go
+// "Link not found" is a business concept, not just a database error
+var LinkNotFound = errors.New("Link not found")
+```
+
+❌ **Don't create for one-off errors**
+```go
+// ❌ Bad - only used once
+var ErrFailedToGenerateCode = errors.New("failed to generate code")
+
+// ✅ Good - just return wrapped error
+return fmt.Errorf("failed to generate code: %w", err)
+```
+
+### Common Patterns
+
+#### Pattern 1: Wrapping with Context
+
+```go
+// Add context while preserving sentinel error
+return fmt.Errorf("failed to get link %s: %w", id, LinkNotFound)
+```
+
+#### Pattern 2: Checking Multiple Sentinels
+
+```go
+switch {
+case errors.Is(err, LinkNotFound):
+    return handleNotFound()
+case errors.Is(err, InvalidURL):
+    return handleInvalidInput()
+default:
+    return handleUnknown()
+}
+```
+
+#### Pattern 3: Standard Library Sentinels
+
+```go
+// Go standard library provides sentinel errors
+if errors.Is(err, sql.ErrNoRows) {
+    // Database "not found"
+}
+if errors.Is(err, os.ErrNotExist) {
+    // File not found
+}
+```
+
+### Sentinel Errors vs Error Codes
+
+**Sentinel Errors (Service Layer):**
+- **Purpose**: Internal Go error checking
+- **Used in**: Service layer, business logic
+- **Checked with**: `errors.Is(err, LinkNotFound)`
+- **Example**: `LinkNotFound`, `InvalidURL`, `InternalError`
+- **Type**: Go `error` interface
+- **Scope**: Internal to your Go code
+
+**Error Codes (HTTP Layer):**
+- **Purpose**: Machine-readable codes for API clients (React frontend)
+- **Used in**: HTTP responses, API contracts
+- **Checked with**: `error.code === "link_not_found"` (in TypeScript)
+- **Example**: `"link_not_found"`, `"invalid_url"`
+- **Type**: `ErrorCode string` (JSON field)
+- **Scope**: External API contract
+
+**The Relationship:**
+
+```
+Service Layer (Go)              HTTP Layer (JSON)
+─────────────────               ────────────────
+LinkNotFound      ──────→    "link_not_found"
+(sentinel error)               (error code)
+     │                                │
+     │                                │
+  errors.Is()                    Frontend checks
+  (internal)                    error.code === "..."
+```
+
+**The Flow:**
+```
+Service → Sentinel Error → Handler checks with errors.Is() → Error Code → Frontend
+```
+
+Both serve different purposes and work together!
 
 ---
 
-### Pattern 2: Error Types with Metadata (Recommended)
+## Error Codes
 
-**When to use:** When you need HTTP status, error codes, or validation details.
+**Error codes** are machine-readable strings for API clients (React frontend). They're only defined for errors that need special frontend handling.
+
+### Definition
+
+**Location**: `pkg/errors/errors.go`
 
 ```go
-// pkg/errors/errors.go
-package errors
-
-import (
-    "fmt"
-    "net/http"
+// Error codes - only for errors that need special frontend handling
+const (
+    CodeLinkNotFound   ErrorCode = "link_not_found"
+    CodeInvalidURL     ErrorCode = "invalid_url"
+    CodeLinkExpired    ErrorCode = "link_expired"     // Future
+    CodeCodeTaken      ErrorCode = "code_taken"       // Future
+    CodeInternalError  ErrorCode = "internal_server_error"    // Only for unknown errors
 )
-
-// AppError represents an application-level error with metadata
-type AppError struct {
-    Code       string // Machine-readable code (LINK_NOT_FOUND)
-    Message    string // User-friendly message
-    StatusCode int    // HTTP status code
-    Internal   error  // Original error (not exposed to clients)
-}
-
-func (e *AppError) Error() string {
-    if e.Internal != nil {
-        return fmt.Sprintf("%s: %v", e.Message, e.Internal)
-    }
-    return e.Message
-}
-
-func (e *AppError) Unwrap() error {
-    return e.Internal
-}
-
-// Constructor functions
-func NewLinkNotFound(code string) *AppError {
-    return &AppError{
-        Code:       "LINK_NOT_FOUND",
-        Message:    fmt.Sprintf("Link with code '%s' not found", code),
-        StatusCode: http.StatusNotFound,
-    }
-}
-
-func NewInvalidURL(url string) *AppError {
-    return &AppError{
-        Code:       "INVALID_URL",
-        Message:    fmt.Sprintf("URL '%s' is invalid", url),
-        StatusCode: http.StatusBadRequest,
-    }
-}
-
-func NewInternalError(err error) *AppError {
-    return &AppError{
-        Code:       "INTERNAL_ERROR",
-        Message:    "An internal error occurred",
-        StatusCode: http.StatusInternalServerError,
-        Internal:   err,
-    }
-}
-
-func NewUnauthorized() *AppError {
-    return &AppError{
-        Code:       "UNAUTHORIZED",
-        Message:    "Authentication required",
-        StatusCode: http.StatusUnauthorized,
-    }
-}
-
-func NewLinkExpired() *AppError {
-    return &AppError{
-        Code:       "LINK_EXPIRED",
-        Message:    "This link has expired",
-        StatusCode: http.StatusGone,
-    }
-}
 ```
 
-**Usage:**
+### Design Principles
+
+- **Only define codes for errors that need special frontend handling**
+- **Generic HTTP errors (400, 401, 403, 404, 500) don't have codes** - use HTTP status directly
+- **Codes should be more specific than HTTP status** (e.g., `link_not_found` vs just 404)
+
+### JSON Response Format
+
+**Generic HTTP error (no code):**
+```json
+{
+  "error": {
+    "message": "Invalid request body"
+  }
+}
+```
+Frontend checks: `status === 400`
+
+**Specific error (has code):**
+```json
+{
+  "error": {
+    "code": "invalid_url",
+    "message": "Invalid URL format"
+  }
+}
+```
+Frontend can handle: `if (error.code === "invalid_url") { /* show validation error */ }`
+
+---
+
+## Handler Patterns
+
+Handlers check errors directly with `errors.Is()` and write HTTP responses using the same pattern as success responses.
+
+### Pattern 1: Handler-Level Errors (JSON Decode, etc.)
+
+For errors that occur in handlers (before calling services):
 
 ```go
-// Service
-func (s *LinkService) GetLink(ctx context.Context, code string) (db.Link, error) {
-    link, err := s.queries.GetLinkForRedirect(ctx, code)
-    if err != nil {
-        if errors.Is(err, sql.ErrNoRows) {
-            return db.Link{}, apperrors.NewLinkNotFound(code)
-        }
-        return db.Link{}, apperrors.NewInternalError(err)
-    }
-
-    if link.ExpiresAt.Valid && link.ExpiresAt.Time.Before(time.Now()) {
-        return db.Link{}, apperrors.NewLinkExpired()
-    }
-
-    return link, nil
-}
-
-// Handler (simple!)
-func (h *Handler) GetLink(w http.ResponseWriter, r *http.Request) {
-    link, err := h.service.GetLink(r.Context(), code)
-    if err != nil {
-        h.handleError(w, err)
-        return
-    }
-    json.NewEncoder(w).Encode(link)
-}
-
-// Error handler middleware
-func (h *Handler) handleError(w http.ResponseWriter, err error) {
-    var appErr *apperrors.AppError
-    if errors.As(err, &appErr) {
-        // Application error - return structured response
-        h.logger.Error("request failed",
-            "code", appErr.Code,
-            "message", appErr.Message,
-            "internal", appErr.Internal,
+func (h *LinkHandler) CreateLink(w http.ResponseWriter, r *http.Request) {
+    var reqBody dto.CreateLink
+    
+    if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
+        h.logger.Warn("Invalid request body",
+            zap.Error(err),
+            zap.String("method", r.Method),
+            zap.String("path", r.URL.Path),
         )
-
-        w.Header().Set("Content-Type", "application/json")
-        w.WriteHeader(appErr.StatusCode)
-        json.NewEncoder(w).Encode(map[string]string{
-            "error": appErr.Code,
-            "message": appErr.Message,
+        render.Status(r, http.StatusBadRequest)
+        render.JSON(w, r, apperrors.ErrorResponse{
+            Error: apperrors.ErrorDetail{
+                Message: "Invalid request body",
+            },
         })
         return
     }
 
-    // Unknown error - return generic 500
-    h.logger.Error("unexpected error", "error", err)
-    http.Error(w, "Internal server error", http.StatusInternalServerError)
+    // ... rest of handler
 }
 ```
 
----
+### Pattern 2: Service Errors
 
-### Pattern 3: Validation Errors (Advanced)
-
-**When to use:** Form/input validation with field-level errors.
+For errors from services, check with `errors.Is()` and handle directly:
 
 ```go
-// pkg/errors/validation.go
-package errors
+func (h *LinkHandler) CreateLink(w http.ResponseWriter, r *http.Request) {
+    // ... decode request body ...
 
-import (
-    "fmt"
-    "net/http"
-    "strings"
-)
-
-type ValidationError struct {
-    Fields map[string]string // field -> error message
-}
-
-func NewValidationError() *ValidationError {
-    return &ValidationError{
-        Fields: make(map[string]string),
-    }
-}
-
-func (e *ValidationError) Add(field, message string) {
-    e.Fields[field] = message
-}
-
-func (e *ValidationError) HasErrors() bool {
-    return len(e.Fields) > 0
-}
-
-func (e *ValidationError) Error() string {
-    var msgs []string
-    for field, msg := range e.Fields {
-        msgs = append(msgs, fmt.Sprintf("%s: %s", field, msg))
-    }
-    return strings.Join(msgs, "; ")
-}
-
-func (e *ValidationError) ToAppError() *AppError {
-    return &AppError{
-        Code:       "VALIDATION_ERROR",
-        Message:    "Validation failed",
-        StatusCode: http.StatusBadRequest,
-        Internal:   e,
-    }
-}
-```
-
-**Usage:**
-
-```go
-// Service
-func (s *LinkService) ValidateCreateLink(originalURL string) error {
-    valErr := apperrors.NewValidationError()
-
-    if originalURL == "" {
-        valErr.Add("original_url", "URL is required")
+    createdLink, err := h.LinkService.CreateShortLink(r.Context(), userID, reqBody.URL)
+    if err != nil {
+        h.handleError(w, r, err)
+        return
     }
 
-    if !isValidURL(originalURL) {
-        valErr.Add("original_url", "URL format is invalid")
-    }
-
-    if len(originalURL) > 2048 {
-        valErr.Add("original_url", "URL is too long (max 2048 characters)")
-    }
-
-    if valErr.HasErrors() {
-        return valErr.ToAppError()
-    }
-
-    return nil
-}
-
-// Handler response
-{
-    "error": "VALIDATION_ERROR",
-    "message": "Validation failed",
-    "fields": {
-        "original_url": "URL format is invalid"
-    }
-}
-```
-
----
-
-## Migration Strategy
-
-### Phase 1: Add Error Package (Now)
-
-```bash
-mkdir -p server/pkg/errors
-touch server/pkg/errors/errors.go
-```
-
-Add basic sentinel errors or AppError type.
-
-### Phase 2: Update Services Gradually
-
-Start with the most common errors:
-
-1. `ErrLinkNotFound` - Used in redirect endpoint
-2. `ErrUnauthorized` - Used in authenticated endpoints
-3. `ErrInvalidURL` - Used in create link
-
-### Phase 3: Update Handlers
-
-Add centralized error handler:
-
-```go
-func (h *Handler) handleError(w http.ResponseWriter, err error)
-```
-
-### Phase 4: Add Middleware
-
-```go
-func ErrorMiddleware(next http.Handler) http.Handler {
-    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-        // Catch panics and convert to errors
+    // Success response
+    render.Status(r, http.StatusCreated)
+    render.JSON(w, r, &dto.SuccessResponse[db.Link]{
+        Data:    createdLink,
+        Message: "Short Link created successfully",
     })
 }
+
+// handleError maps errors to HTTP responses and writes them directly
+func (h *LinkHandler) handleError(w http.ResponseWriter, r *http.Request, err error) {
+    switch {
+    case errors.Is(err, apperrors.LinkNotFound):
+        h.logger.Warn("Link not found",
+            zap.Error(err),
+            zap.String("method", r.Method),
+            zap.String("path", r.URL.Path),
+        )
+        render.Status(r, http.StatusNotFound)
+        render.JSON(w, r, dto.ErrorResponse{
+            Error: dto.ErrorObject{
+                Code:   apperrors.CodeLinkNotFound,
+                Title:  apperrors.LinkNotFound.Error(),
+                Detail: "Unable to find link with shortcode",
+            },
+        })
+
+    case errors.Is(err, apperrors.InvalidURL):
+        h.logger.Warn("Invalid URL",
+            zap.Error(err),
+            zap.String("method", r.Method),
+            zap.String("path", r.URL.Path),
+        )
+        render.Status(r, http.StatusBadRequest)
+        render.JSON(w, r, dto.ErrorResponse{
+            Error: dto.ErrorObject{
+                Code:   apperrors.CodeInvalidURL,
+                Title:  apperrors.InvalidURL.Error(),
+                Detail: "",
+            },
+        })
+
+    case errors.Is(err, sql.ErrNoRows):
+        h.logger.Warn("Resource not found",
+            zap.Error(err),
+            zap.String("method", r.Method),
+            zap.String("path", r.URL.Path),
+        )
+        render.Status(r, http.StatusNotFound)
+        render.JSON(w, r, dto.ErrorResponse{
+            Error: dto.ErrorObject{
+                Code:   apperrors.CodeLinkNotFound,
+                Title:  "Resource not found",
+                Detail: "",
+            },
+        })
+
+    default:
+        h.logger.Error("Internal server error",
+            zap.Error(err),
+            zap.String("method", r.Method),
+            zap.String("path", r.URL.Path),
+        )
+        render.Status(r, http.StatusInternalServerError)
+        render.JSON(w, r, dto.ErrorResponse{
+            Error: dto.ErrorObject{
+                Code:   apperrors.CodeInternalError,
+                Title:  apperrors.InternalError.Error(),
+                Detail: "",
+            },
+        })
+    }
+}
 ```
+
+### Pattern 3: Middleware Errors
+
+For errors in middleware (like authentication):
+
+```go
+func RequireAuth(log logger.Logger) func(http.Handler) http.Handler {
+    return func(next http.Handler) http.Handler {
+        return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+            claims, ok := clerk.SessionClaimsFromContext(r.Context())
+
+            if !ok || claims == nil {
+                log.Warn("Missing or invalid session claims",
+                    zap.String("method", r.Method),
+                    zap.String("path", r.URL.Path),
+                )
+                render.Status(r, http.StatusUnauthorized)
+                render.JSON(w, r, apperrors.ErrorResponse{
+                    Error: apperrors.ErrorDetail{
+                        Message: "Authentication required",
+                    },
+                })
+                return
+            }
+
+            // ... continue
+        })
+    }
+}
+```
+
+**Key points:**
+- Handlers write error responses directly using `render.Status()` and `render.JSON()`
+- Same pattern as success responses - no special abstractions
+- Log errors appropriately (Warn for expected errors, Error for unexpected)
+- Use `handleError()` helper to avoid repetition if you have multiple handlers
+
+---
+
+## When to Use errors Package vs fmt.Errorf()
+
+This is a common question: when should you use `errors.New()` from the `errors` package vs `fmt.Errorf()`?
+
+### Use `errors.New()` for Sentinel Errors
+
+**When**: You need a predefined error value that will be checked with `errors.Is()` in multiple places.
+
+```go
+// In pkg/errors/errors.go
+var (
+    LinkNotFound = errors.New("Link not found")  // ✅ Sentinel error
+    InvalidURL   = errors.New("Invalid URL")     // ✅ Sentinel error
+)
+
+// In service
+if errors.Is(err, sql.ErrNoRows) {
+    return db.Link{}, fmt.Errorf("%w: %v", apperrors.LinkNotFound, err)
+}
+
+// In handler
+if errors.Is(err, apperrors.LinkNotFound) {
+    // Handle not found
+}
+```
+
+**Why**: Sentinel errors are **identity-based** - you check for the specific error value, not the message. The message is just for debugging.
+
+### Use `fmt.Errorf()` for Wrapping and Context
+
+**When**: You need to add context to an error or wrap another error.
+
+```go
+// ✅ Good - wrap sentinel error with context
+return fmt.Errorf("failed to get link %s: %w", id, apperrors.LinkNotFound)
+
+// ✅ Good - wrap generic error with context
+return fmt.Errorf("failed to create link: %w", err)
+
+// ✅ Good - create one-off error with context
+return fmt.Errorf("failed to generate code: %w", err)
+```
+
+**Why**: `fmt.Errorf()` with `%w` preserves the original error in the chain, allowing `errors.Is()` to work correctly.
+
+### Decision Tree
+
+```
+Is this error checked in multiple places?
+├─ YES → Use errors.New() (sentinel error)
+│        └─ Check with errors.Is() in handlers/services
+│
+└─ NO → Use fmt.Errorf() (one-off error)
+         └─ Just return it, no need to check for it
+```
+
+### Examples
+
+#### ✅ Sentinel Error (errors.New)
+
+```go
+// pkg/errors/errors.go
+var LinkNotFound = errors.New("Link not found")
+
+// pkg/service/link.go
+if errors.Is(err, sql.ErrNoRows) {
+    return db.Link{}, fmt.Errorf("%w: %v", apperrors.LinkNotFound, err)
+}
+
+// pkg/handlers/link.go
+if errors.Is(err, apperrors.LinkNotFound) {
+    // Handle not found
+}
+```
+
+#### ✅ One-Off Error (fmt.Errorf)
+
+```go
+// pkg/service/link.go
+code, err := generateRandomCode(9)
+if err != nil {
+    // Only used once, no need for sentinel
+    return db.Link{}, fmt.Errorf("failed to generate code: %w", err)
+}
+```
+
+#### ✅ Wrapping Standard Library Errors
+
+```go
+// pkg/service/link.go
+link, err := s.queries.GetLinkByIdAndUser(ctx, params)
+if err != nil {
+    if errors.Is(err, sql.ErrNoRows) {
+        // Wrap standard library error with sentinel
+        return db.Link{}, fmt.Errorf("%w: %v", apperrors.LinkNotFound, err)
+    }
+    // Wrap other errors with context
+    return db.Link{}, fmt.Errorf("failed to get link: %w", err)
+}
+```
+
+### Best Practices
+
+1. **Create sentinel errors for domain concepts** that are checked in multiple places
+2. **Use `fmt.Errorf("%w", ...)` to wrap errors** - preserves error chain
+3. **Don't create sentinels for one-off errors** - just use `fmt.Errorf()`
+4. **Always wrap with context** - `fmt.Errorf("context: %w", err)` not just `err`
 
 ---
 
@@ -396,183 +582,147 @@ func ErrorMiddleware(next http.Handler) http.Handler {
 ### ✅ DO
 
 **1. Keep errors package-level**
-
 ```go
 // pkg/errors/errors.go - All error definitions in one place
 ```
 
 **2. Use descriptive error codes**
-
 ```go
-"LINK_NOT_FOUND"        // ✅ Clear
-"ERR_001"               // ❌ Cryptic
+"link_not_found"  // ✅ Clear
+"ERR_001"         // ❌ Cryptic
 ```
 
-**3. Separate user messages from internal details**
-
+**3. Log errors appropriately**
 ```go
-AppError{
-    Message:  "Link not found",           // User sees this
-    Internal: fmt.Errorf("query failed"), // Logs only
-}
+// Warn for expected errors (not found, validation errors)
+        h.logger.Warn("Link not found", zap.Error(err))
+
+// Error for unexpected errors (database failures, etc.)
+h.logger.Error("Database query failed", zap.Error(err))
 ```
 
-**4. Log internal errors, hide from users**
-
+**4. Don't expose internal errors to clients**
 ```go
-h.logger.Error("db error", "internal", appErr.Internal)
-// Don't send database details to client!
+// ✅ Good - generic message
+render.JSON(w, r, apperrors.ErrorResponse{
+    Error: apperrors.ErrorDetail{
+        Message: "An unexpected error occurred",
+    },
+})
+
+// ❌ Bad - might leak database details
+render.JSON(w, r, apperrors.ErrorResponse{
+    Error: apperrors.ErrorDetail{
+        Message: err.Error(),  // "connection to postgres failed"
+    },
+})
 ```
 
 **5. Use consistent error response format**
-
 ```json
 {
-	"error": "LINK_NOT_FOUND",
-	"message": "Link with code 'abc123' not found"
+  "error": {
+    "code": "link_not_found",
+    "message": "Link not found"
+  }
 }
+```
+
+**6. Wrap errors with context**
+```go
+// ✅ Good
+return fmt.Errorf("failed to get link %s: %w", id, LinkNotFound)
+
+// ❌ Bad
+return LinkNotFound
+```
+
+**7. Use the same pattern for errors as success responses**
+```go
+// Success
+render.Status(r, http.StatusOK)
+render.JSON(w, r, &dto.SuccessResponse[...]{...})
+
+// Error
+render.Status(r, http.StatusNotFound)
+render.JSON(w, r, apperrors.ErrorResponse{...})
 ```
 
 ### ❌ DON'T
 
 **1. Don't expose internal errors to clients**
-
 ```go
 // ❌ Bad
 http.Error(w, err.Error(), 500)  // Might leak "connection to postgres failed"
 
 // ✅ Good
-http.Error(w, "Internal server error", 500)
+render.Status(r, http.StatusInternalServerError)
+render.JSON(w, r, apperrors.ErrorResponse{
+    Error: apperrors.ErrorDetail{
+        Message: "An unexpected error occurred",
+    },
+})
 ```
 
 **2. Don't create too many error types**
-
 ```go
 // ❌ Bad - too granular
-ErrLinkNotFoundInDatabase
-ErrLinkNotFoundInCache
-ErrLinkNotFoundAfterRetry
+LinkNotFoundInDatabase
+LinkNotFoundInCache
+LinkNotFoundAfterRetry
 
 // ✅ Good
-ErrLinkNotFound  // Callers don't care where it failed
+LinkNotFound  // Callers don't care where it failed
 ```
 
-**3. Don't ignore error context**
-
+**3. Don't create error codes for generic HTTP errors**
 ```go
-// ❌ Bad
-return ErrLinkNotFound
+// ❌ Bad - redundant
+ErrorBadRequest ErrorCode = "BAD_REQUEST"  // HTTP 400 is enough
 
-// ✅ Good
-return fmt.Errorf("failed to get link %s: %w", code, ErrLinkNotFound)
+// ✅ Good - just use HTTP status, no code field
+render.Status(r, http.StatusBadRequest)
+render.JSON(w, r, apperrors.ErrorResponse{
+    Error: apperrors.ErrorDetail{
+        Message: "Invalid request body",
+    },
+})
+```
+
+**4. Don't use context to pass errors**
+```go
+// ❌ Bad - indirect, requires special middleware
+r = apperrors.SetError(r, err)
+
+// ✅ Good - handle directly
+if err != nil {
+    h.handleError(w, r, err)
+    return
+}
 ```
 
 ---
 
 ## Error Catalog
 
-### Planned Error Codes
+### Current Error Codes
 
-| Code             | Status | Message                  | When                  |
-| ---------------- | ------ | ------------------------ | --------------------- |
-| `LINK_NOT_FOUND` | 404    | Link not found           | Code doesn't exist    |
-| `LINK_EXPIRED`   | 410    | Link has expired         | Expired timestamp     |
-| `INVALID_URL`    | 400    | Invalid URL format       | URL validation fails  |
-| `CODE_TAKEN`     | 409    | Short code already taken | Custom code conflict  |
-| `UNAUTHORIZED`   | 401    | Authentication required  | Missing/invalid auth  |
-| `FORBIDDEN`      | 403    | Access denied            | User doesn't own link |
-| `RATE_LIMITED`   | 429    | Too many requests        | Rate limit exceeded   |
-| `INTERNAL_ERROR` | 500    | Internal server error    | Unexpected errors     |
+**Note:** We only define error codes for errors that need special frontend handling. Generic HTTP errors (400, 401, 403, 404, 500) use HTTP status codes directly - no code field in JSON response.
 
----
+| Code             | Status | Message                  | When                  | Notes                    |
+| ---------------- | ------ | ------------------------ | --------------------- | ------------------------ |
+| `link_not_found` | 404    | Link not found           | Code doesn't exist    | Specific - frontend handles differently |
+| `invalid_url`    | 400    | Invalid URL format       | URL validation fails  | Specific - frontend shows validation error |
+| `link_expired`   | 410    | Link has expired         | Expired timestamp     | Future: different from not found |
+| `code_taken`     | 409    | Short code already taken | Custom code conflict  | Future: custom code conflicts |
+| `internal_error` | 500    | Internal server error    | Unexpected errors     | Only for unknown errors |
 
-## Example: Full Implementation
-
-```go
-// pkg/errors/errors.go
-package errors
-
-import (
-    "fmt"
-    "net/http"
-)
-
-type AppError struct {
-    Code       string
-    Message    string
-    StatusCode int
-    Internal   error
-}
-
-func (e *AppError) Error() string {
-    if e.Internal != nil {
-        return fmt.Sprintf("%s: %v", e.Message, e.Internal)
-    }
-    return e.Message
-}
-
-func (e *AppError) Unwrap() error {
-    return e.Internal
-}
-
-// Constructors
-func NewLinkNotFound(code string) *AppError {
-    return &AppError{
-        Code:       "LINK_NOT_FOUND",
-        Message:    fmt.Sprintf("Link '%s' not found", code),
-        StatusCode: http.StatusNotFound,
-    }
-}
-
-func NewInternalError(err error) *AppError {
-    return &AppError{
-        Code:       "INTERNAL_ERROR",
-        Message:    "An internal error occurred",
-        StatusCode: http.StatusInternalServerError,
-        Internal:   err,
-    }
-}
-
-// pkg/service/link.go
-func (s *LinkService) GetOriginalURL(ctx context.Context, code string) (string, error) {
-    link, err := s.queries.GetLinkForRedirect(ctx, code)
-    if err != nil {
-        if errors.Is(err, sql.ErrNoRows) {
-            return "", apperrors.NewLinkNotFound(code)
-        }
-        return "", apperrors.NewInternalError(err)
-    }
-    return link.OriginalUrl, nil
-}
-
-// pkg/handlers/link.go
-func (h *Handler) RedirectLink(w http.ResponseWriter, r *http.Request) {
-    code := chi.URLParam(r, "code")
-
-    url, err := h.service.GetOriginalURL(r.Context(), code)
-    if err != nil {
-        h.handleError(w, err)
-        return
-    }
-
-    http.Redirect(w, r, url, http.StatusFound)
-}
-
-func (h *Handler) handleError(w http.ResponseWriter, err error) {
-    var appErr *apperrors.AppError
-    if errors.As(err, &appErr) {
-        w.Header().Set("Content-Type", "application/json")
-        w.WriteHeader(appErr.StatusCode)
-        json.NewEncoder(w).Encode(map[string]string{
-            "error":   appErr.Code,
-            "message": appErr.Message,
-        })
-        return
-    }
-
-    http.Error(w, "Internal server error", http.StatusInternalServerError)
-}
-```
+**Generic HTTP Errors (no code field):**
+- `400 Bad Request` - Invalid request body, malformed JSON, etc.
+- `401 Unauthorized` - Missing/invalid authentication
+- `403 Forbidden` - Access denied
+- `404 Not Found` - Generic resource not found (when not link-specific)
+- `500 Internal Server Error` - Server errors (when not using `internal_error` code)
 
 ---
 
@@ -581,14 +731,3 @@ func (h *Handler) handleError(w http.ResponseWriter, err error) {
 - [Go Blog: Error Handling](https://go.dev/blog/error-handling-and-go)
 - [Go Blog: Working with Errors](https://go.dev/blog/go1.13-errors)
 - [Dave Cheney: Don't just check errors, handle them gracefully](https://dave.cheney.net/2016/04/27/dont-just-check-errors-handle-them-gracefully)
-
----
-
-## Next Steps
-
-1. ✅ Keep using `fmt.Errorf` for MVP
-2. ⏳ Create `pkg/errors` when adding handlers
-3. ⏳ Migrate to AppError when adding API endpoints
-4. ⏳ Add validation errors when building forms
-
-**Remember:** Start simple, add complexity when needed!

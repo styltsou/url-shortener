@@ -12,9 +12,10 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const deleteLink = `-- name: DeleteLink :exec
-DELETE FROM links
-WHERE id = $1 AND user_id = $2
+const deleteLink = `-- name: DeleteLink :execrows
+UPDATE links
+SET deleted_at = NOW(), updated_at = NOW()
+WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL
 `
 
 type DeleteLinkParams struct {
@@ -22,14 +23,17 @@ type DeleteLinkParams struct {
 	UserID string    `json:"user_id"`
 }
 
-func (q *Queries) DeleteLink(ctx context.Context, arg DeleteLinkParams) error {
-	_, err := q.db.Exec(ctx, deleteLink, arg.ID, arg.UserID)
-	return err
+func (q *Queries) DeleteLink(ctx context.Context, arg DeleteLinkParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteLink, arg.ID, arg.UserID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const getLinkByIdAndUser = `-- name: GetLinkByIdAndUser :one
-SELECT id, code, original_url, user_id, clicks, expires_at, created_at, updated_at FROM links
-WHERE id = $1 AND user_id = $2
+SELECT id, shortcode, original_url, user_id, clicks, expires_at, created_at, updated_at, deleted_at FROM links
+WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL
 LIMIT 1
 `
 
@@ -43,13 +47,14 @@ func (q *Queries) GetLinkByIdAndUser(ctx context.Context, arg GetLinkByIdAndUser
 	var i Link
 	err := row.Scan(
 		&i.ID,
-		&i.Code,
+		&i.Shortcode,
 		&i.OriginalUrl,
 		&i.UserID,
 		&i.Clicks,
 		&i.ExpiresAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DeletedAt,
 	)
 	return i, err
 }
@@ -57,7 +62,8 @@ func (q *Queries) GetLinkByIdAndUser(ctx context.Context, arg GetLinkByIdAndUser
 const getLinkForRedirect = `-- name: GetLinkForRedirect :one
 SELECT id, original_url, expires_at, clicks 
 FROM links
-WHERE code = $1
+WHERE shortcode = $1
+AND deleted_at IS NULL
 AND (expires_at IS NULL OR expires_at > NOW())
 LIMIT 1
 `
@@ -69,8 +75,8 @@ type GetLinkForRedirectRow struct {
 	Clicks      *int32           `json:"clicks"`
 }
 
-func (q *Queries) GetLinkForRedirect(ctx context.Context, code string) (GetLinkForRedirectRow, error) {
-	row := q.db.QueryRow(ctx, getLinkForRedirect, code)
+func (q *Queries) GetLinkForRedirect(ctx context.Context, shortcode string) (GetLinkForRedirectRow, error) {
+	row := q.db.QueryRow(ctx, getLinkForRedirect, shortcode)
 	var i GetLinkForRedirectRow
 	err := row.Scan(
 		&i.ID,
@@ -84,17 +90,17 @@ func (q *Queries) GetLinkForRedirect(ctx context.Context, code string) (GetLinkF
 const incrementClicks = `-- name: IncrementClicks :exec
 UPDATE links
 SET clicks = clicks + 1
-WHERE code = $1
+WHERE shortcode = $1 AND deleted_at IS NULL
 `
 
-func (q *Queries) IncrementClicks(ctx context.Context, code string) error {
-	_, err := q.db.Exec(ctx, incrementClicks, code)
+func (q *Queries) IncrementClicks(ctx context.Context, shortcode string) error {
+	_, err := q.db.Exec(ctx, incrementClicks, shortcode)
 	return err
 }
 
 const listUserLinks = `-- name: ListUserLinks :many
-SELECT id, code, original_url, user_id, clicks, expires_at, created_at, updated_at FROM links
-WHERE user_id = $1
+SELECT id, shortcode, original_url, user_id, clicks, expires_at, created_at, updated_at, deleted_at FROM links
+WHERE user_id = $1 AND deleted_at IS NULL
 ORDER BY created_at DESC
 `
 
@@ -109,13 +115,14 @@ func (q *Queries) ListUserLinks(ctx context.Context, userID string) ([]Link, err
 		var i Link
 		if err := rows.Scan(
 			&i.ID,
-			&i.Code,
+			&i.Shortcode,
 			&i.OriginalUrl,
 			&i.UserID,
 			&i.Clicks,
 			&i.ExpiresAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.DeletedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -128,30 +135,35 @@ func (q *Queries) ListUserLinks(ctx context.Context, userID string) ([]Link, err
 }
 
 const tryCreateLink = `-- name: TryCreateLink :one
-INSERT INTO links (code, original_url, user_id)
-VALUES ($1, $2, $3)
-ON CONFLICT (code) DO NOTHING
-RETURNING id, code, original_url, user_id, clicks, expires_at, created_at, updated_at
+INSERT INTO links (shortcode, original_url, user_id)
+SELECT $1::VARCHAR(20), $2::TEXT, $3::TEXT
+WHERE NOT EXISTS (
+    SELECT 1 FROM links 
+    WHERE shortcode = $1::VARCHAR(20) AND deleted_at IS NULL
+)
+RETURNING id, shortcode, original_url, user_id, clicks, expires_at, created_at, updated_at, deleted_at
 `
 
 type TryCreateLinkParams struct {
-	Code        string `json:"code"`
+	Shortcode   string `json:"shortcode"`
 	OriginalUrl string `json:"original_url"`
 	UserID      string `json:"user_id"`
 }
 
+// sqlc.arg(shortcode) sqlc.arg(original_url) sqlc.arg(user_id)
 func (q *Queries) TryCreateLink(ctx context.Context, arg TryCreateLinkParams) (Link, error) {
-	row := q.db.QueryRow(ctx, tryCreateLink, arg.Code, arg.OriginalUrl, arg.UserID)
+	row := q.db.QueryRow(ctx, tryCreateLink, arg.Shortcode, arg.OriginalUrl, arg.UserID)
 	var i Link
 	err := row.Scan(
 		&i.ID,
-		&i.Code,
+		&i.Shortcode,
 		&i.OriginalUrl,
 		&i.UserID,
 		&i.Clicks,
 		&i.ExpiresAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DeletedAt,
 	)
 	return i, err
 }
@@ -159,17 +171,17 @@ func (q *Queries) TryCreateLink(ctx context.Context, arg TryCreateLinkParams) (L
 const updateLink = `-- name: UpdateLink :one
 UPDATE links
 SET 
-    code = COALESCE($3, code),
+    shortcode = COALESCE($3, shortcode),
     expires_at = COALESCE($4, expires_at),
     updated_at = NOW()
-WHERE id = $1 AND user_id = $2
-RETURNING id, code, original_url, user_id, clicks, expires_at, created_at, updated_at
+WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL
+RETURNING id, shortcode, original_url, user_id, clicks, expires_at, created_at, updated_at, deleted_at
 `
 
 type UpdateLinkParams struct {
 	ID        uuid.UUID        `json:"id"`
 	UserID    string           `json:"user_id"`
-	Code      *string          `json:"code"`
+	Shortcode *string          `json:"shortcode"`
 	ExpiresAt pgtype.Timestamp `json:"expires_at"`
 }
 
@@ -177,19 +189,20 @@ func (q *Queries) UpdateLink(ctx context.Context, arg UpdateLinkParams) (Link, e
 	row := q.db.QueryRow(ctx, updateLink,
 		arg.ID,
 		arg.UserID,
-		arg.Code,
+		arg.Shortcode,
 		arg.ExpiresAt,
 	)
 	var i Link
 	err := row.Scan(
 		&i.ID,
-		&i.Code,
+		&i.Shortcode,
 		&i.OriginalUrl,
 		&i.UserID,
 		&i.Clicks,
 		&i.ExpiresAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DeletedAt,
 	)
 	return i, err
 }

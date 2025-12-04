@@ -11,11 +11,12 @@ import (
 
 type Link struct {
 	ID          uuid.UUID        `json:"id"`
-	Code        string           `json:"code"`
+	Shortcode   string           `json:"shortcode"`
 	OriginalUrl string           `json:"original_url"`
 	UserID      string           `json:"user_id"`
 	Clicks      *int32           `json:"clicks"`
 	ExpiresAt   pgtype.Timestamp `json:"expires_at"`
 	CreatedAt   pgtype.Timestamp `json:"created_at"`
 	UpdatedAt   pgtype.Timestamp `json:"updated_at"`
+	DeletedAt   pgtype.Timestamp `json:"deleted_at"`
 }

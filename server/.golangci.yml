@@ -1,0 +1,23 @@
+# Minimal golangci-lint config
+# golangci-lint is a SINGLE tool that runs many linters for you
+# This is much simpler than installing/running each linter separately
+
+issues:
+  exclude-dirs:
+    - vendor
+    - migrations
+  exclude-files:
+    - ".*\\.sql\\.go$"  # Generated sqlc files
+  exclude-rules:
+    - path: _test\.go
+      linters:
+        - errcheck
+
+linters:
+  # Just enable the most useful ones
+  enable:
+    - errcheck      # Check for unchecked errors (critical!)
+    - govet         # Basic static analysis
+    - staticcheck   # Catches bugs go vet misses
+    - unused        # Unused code
+    - ineffassign   # Ineffective assignments

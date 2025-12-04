@@ -1,79 +1,120 @@
+// Package server implements the Server abstraction
 package server
 
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/clerk/clerk-sdk-go/v2"
 	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
+	chimw "github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/styltsou/url-shortener/server/pkg/api"
+	"github.com/redis/go-redis/v9"
 	"github.com/styltsou/url-shortener/server/pkg/config"
 	"github.com/styltsou/url-shortener/server/pkg/db"
 	"github.com/styltsou/url-shortener/server/pkg/handlers"
+	"github.com/styltsou/url-shortener/server/pkg/logger"
+	"github.com/styltsou/url-shortener/server/pkg/middleware"
+	"github.com/styltsou/url-shortener/server/pkg/router"
 	"github.com/styltsou/url-shortener/server/pkg/service"
+	"go.uber.org/zap"
 )
 
 // Server encapsulates the HTTP server, router, database pool, and context
 type Server struct {
-	Context context.Context
-	Router  *chi.Mux
-	Pool    *pgxpool.Pool
+	Context     context.Context
+	Pool        *pgxpool.Pool
+	RedisClient *redis.Client
+	Router      *chi.Mux
+	Logger      logger.Logger
 }
 
-// NewServer creates and initializes a new Server instance
-func NewServer() *Server {
+// New creates and initializes a new Server instance
+// It automatically connects to the database and mounts handlers
+// Logger and config should be initialized in the caller (main.go)
+func New(config *config.Config, log logger.Logger) (*Server, error) {
+	clerk.SetKey(config.ClerkSecretKey)
+
 	s := &Server{
 		Context: context.Background(),
 		Router:  chi.NewRouter(),
+		Logger:  log,
 	}
 
-	config.Load()
-	clerk.SetKey(config.ClerkSecretKey)
+	pool, pgErr := pgxpool.New(s.Context, config.PostgresConnectionString)
 
-	return s
-}
-
-// ConnectDB establishes a connection to the database
-func (s *Server) ConnectDB(connString string) error {
-	pool, err := pgxpool.New(s.Context, connString)
-	if err != nil {
-		return fmt.Errorf("failed to create database pool: %w", err)
+	if pgErr != nil {
+		return nil, fmt.Errorf("failed to create Postgres pool: %w", pgErr)
 	}
-
 	s.Pool = pool
-	return nil
-}
+	log.Info("Postgres connected successfully",
+		zap.String("pg_connection_str", config.PostgresConnectionString),
+	)
 
-// MountHandlers sets up routes and middleware
-func (s *Server) MountHandlers() error {
-	if s.Pool == nil {
-		return fmt.Errorf("database pool not initialized, call ConnectDB first")
+	// Try to connect to Redis, but don't fail if it's unavailable (degraded mode)
+	rdb := redis.NewClient(&redis.Options{
+		Addr:         config.RedisURL,
+		Username:     config.RedisUsername,
+		Password:     config.RedisPassword,
+		DB:           config.RedisDB,
+		MaxRetries:   config.RedisMaxRetries,
+		DialTimeout:  time.Duration(config.RedisDialTimeout) * time.Second,
+		ReadTimeout:  time.Duration(config.RedisReadTimeout) * time.Second,
+		WriteTimeout: time.Duration(config.RedisWriteTimeout) * time.Second,
+	})
+
+	// TODO: Need to understand this better
+	// Ping Redis with a timeout to avoid hanging
+	pingCtx, cancel := context.WithTimeout(s.Context, 3*time.Second)
+	defer cancel()
+
+	if err := rdb.Ping(pingCtx).Err(); err != nil {
+		s.RedisClient = nil
+		log.Warn("Redis connection failed, running without cache",
+			zap.Error(err),
+			zap.String("redis_url", config.RedisURL),
+		)
+	} else {
+		s.RedisClient = rdb
+		log.Info("Redis connected successfully",
+			zap.String("redis_url", config.RedisURL),
+		)
 	}
 
 	queries := db.New(s.Pool)
+	linkSvc := service.NewLinkService(queries, s.RedisClient, s.Logger)
+	linkHandler := handlers.NewLinkHandler(linkSvc, s.Logger)
 
-	linkSvc := service.NewLinkService(queries)
-	linkHandler := handlers.NewLinkHandler(linkSvc)
+	s.Router.Use(cors.Handler(cors.Options{
+		AllowedOrigins:   config.CORSAllowedOrigins,
+		AllowedMethods:   config.CORSAllowedMethods,
+		AllowedHeaders:   config.CORSAllowedHeaders,
+		ExposedHeaders:   config.CORSExposedHeaders,
+		AllowCredentials: config.CORSAllowCredentials,
+		MaxAge:           config.CORSMaxAge,
+	}))
+	s.Router.Use(chimw.RequestID)
+	s.Router.Use(middleware.RequestLogger(s.Logger))
+	s.Router.Use(chimw.Recoverer)
 
-	s.Router.Use(cors.Handler(cors.Options{}))
-	s.Router.Use(middleware.RequestID)
-	s.Router.Use(middleware.Logger)
-	s.Router.Use(middleware.Recoverer)
+	apiRouter := router.New(linkHandler, s.Logger)
+	s.Router.Mount("/", apiRouter)
 
-	apiRouter := api.NewRouter(linkHandler)
-	s.Router.Mount("", apiRouter)
-
-	return nil
+	return s, nil
 }
 
-// Shutdown gracefully shuts down the server and closes resources
-func (s *Server) Shutdown() error {
+func (s *Server) CloseConnections() {
 	if s.Pool != nil {
 		s.Pool.Close()
 	}
 
-	return nil
+	if s.RedisClient != nil {
+		if err := s.RedisClient.Close(); err != nil {
+			s.Logger.Error("Error closing Redis pool",
+				zap.Error(err),
+			)
+		}
+	}
 }

@@ -1,0 +1,486 @@
+openapi: 3.1.0
+info:
+  title: URL Shortener API
+  version: 1.0.0
+  description: API for creating and managing shortened URLs with authentication via Clerk
+servers:
+- url: http://localhost:8080
+  description: Local development server
+tags:
+- name: Links
+  description: Operations for managing shortened links
+- name: Public
+  description: Public endpoints that don't require authentication
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: 'Clerk authentication token. Include the token in the Authorization header as: Bearer <token>'
+  schemas:
+    Link:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Unique identifier for the link
+        shortcode:
+          type: string
+          maxLength: 20
+          description: Short code used in the shortened URL
+        original_url:
+          type: string
+          format: uri
+          description: The original long URL that was shortened
+        user_id:
+          type: string
+          description: Clerk user ID of the link owner
+        clicks:
+          type: integer
+          nullable: true
+          description: Total number of clicks on this link
+        expires_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Optional expiration date for the link
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when the link was created
+        updated_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Timestamp when the link was last updated
+      required:
+      - id
+      - shortcode
+      - original_url
+      - user_id
+      - created_at
+    CreateLinkRequest:
+      type: object
+      required:
+      - url
+      properties:
+        url:
+          type: string
+          format: uri
+          description: The URL to shorten
+    UpdateLinkRequest:
+      type: object
+      properties:
+        code:
+          type: string
+          maxLength: 20
+          description: New shortcode for the link (optional)
+        expires_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: New expiration date for the link (optional, set to null to remove expiration)
+    SuccessResponse:
+      type: object
+      properties:
+        data:
+          description: Response data (type varies by endpoint)
+        message:
+          type: string
+          description: Success message
+      required:
+      - data
+    LinkSuccessResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/Link'
+        message:
+          type: string
+      required:
+      - data
+    LinksListSuccessResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Link'
+        message:
+          type: string
+      required:
+      - data
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          $ref: '#/components/schemas/ErrorDetail'
+      required:
+      - error
+    ErrorDetail:
+      type: object
+      properties:
+        code:
+          type: string
+          enum:
+          - BAD_REQUEST
+          - UNAUTHORIZED
+          - FORBIDDEN
+          - NOT_FOUND
+          - INTERNAL_ERROR
+          - LINK_NOT_FOUND
+          - INVALID_LINK_URL
+          - USER_NOT_FOUND
+          description: Machine-readable error code
+        message:
+          type: string
+          description: Human-readable error message
+      required:
+      - code
+      - message
+paths:
+  /{code}:
+    get:
+      tags:
+      - Public
+      summary: Redirect to original URL
+      description: Public endpoint that redirects to the original URL associated with the shortcode. Does not require authentication.
+      operationId: redirect
+      parameters:
+      - name: code
+        in: path
+        required: true
+        schema:
+          type: string
+          maxLength: 20
+        description: The shortcode to redirect
+      responses:
+        '302':
+          description: Redirect to the original URL
+          headers:
+            Location:
+              schema:
+                type: string
+                format: uri
+              description: The original URL to redirect to
+        '404':
+          description: Link not found or expired
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error:
+                  code: NOT_FOUND
+                  message: Link not found or has expired
+  /api/v1/reference:
+    get:
+      tags:
+      - Public
+      summary: API Reference Documentation
+      description: Returns the Scalar API reference UI for viewing the OpenAPI specification
+      operationId: getApiReference
+      responses:
+        '200':
+          description: HTML page with API reference
+          content:
+            text/html:
+              schema:
+                type: string
+        '500':
+          description: Failed to generate API reference
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/links:
+    get:
+      tags:
+      - Links
+      summary: List all links
+      description: Retrieves all shortened links for the authenticated user
+      operationId: listLinks
+      security:
+      - BearerAuth: []
+      responses:
+        '200':
+          description: List of user's links
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LinksListSuccessResponse'
+              example:
+                data:
+                - id: 123e4567-e89b-12d3-a456-426614174000
+                  shortcode: abc123
+                  original_url: https://example.com/very/long/url
+                  user_id: user_2abc123
+                  clicks: 42
+                  expires_at: null
+                  created_at: '2024-01-15T10:30:00Z'
+                  updated_at: '2024-01-15T10:30:00Z'
+                message: User links retrieved successfully
+        '401':
+          description: Unauthorized - Missing or invalid authentication token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error:
+                  code: UNAUTHORIZED
+                  message: Authentication required
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    post:
+      tags:
+      - Links
+      summary: Create a new shortened link
+      description: Creates a new shortened link for the authenticated user
+      operationId: createLink
+      security:
+      - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateLinkRequest'
+            example:
+              url: https://example.com/very/long/url/that/needs/shortening
+      responses:
+        '201':
+          description: Link created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LinkSuccessResponse'
+              example:
+                data:
+                  id: 123e4567-e89b-12d3-a456-426614174000
+                  shortcode: abc123
+                  original_url: https://example.com/very/long/url/that/needs/shortening
+                  user_id: user_2abc123
+                  clicks: 0
+                  expires_at: null
+                  created_at: '2024-01-15T10:30:00Z'
+                  updated_at: null
+                message: Short Link created successfully
+        '400':
+          description: Bad request - Invalid URL or request body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error:
+                  code: BAD_REQUEST
+                  message: Invalid request body
+        '401':
+          description: Unauthorized - Missing or invalid authentication token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error:
+                  code: UNAUTHORIZED
+                  message: Authentication required
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/links/{id}:
+    get:
+      tags:
+      - Links
+      summary: Get a link by ID
+      description: Retrieves a specific shortened link by its ID. The link must belong to the authenticated user.
+      operationId: getLink
+      security:
+      - BearerAuth: []
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+        description: The UUID of the link to retrieve
+      responses:
+        '200':
+          description: Link retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LinkSuccessResponse'
+              example:
+                data:
+                  id: 123e4567-e89b-12d3-a456-426614174000
+                  shortcode: abc123
+                  original_url: https://example.com/very/long/url
+                  user_id: user_2abc123
+                  clicks: 42
+                  expires_at: null
+                  created_at: '2024-01-15T10:30:00Z'
+                  updated_at: '2024-01-15T10:30:00Z'
+                message: Link retrieved successfully
+        '401':
+          description: Unauthorized - Missing or invalid authentication token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error:
+                  code: UNAUTHORIZED
+                  message: Authentication required
+        '404':
+          description: Link not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error:
+                  code: LINK_NOT_FOUND
+                  message: Link not found
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    patch:
+      tags:
+      - Links
+      summary: Update a link
+      description: Updates a shortened link. Currently supports updating the shortcode and expiration date. The link must
+        belong to the authenticated user.
+      operationId: updateLink
+      security:
+      - BearerAuth: []
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+        description: The UUID of the link to update
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateLinkRequest'
+            example:
+              code: newcode
+              expires_at: '2024-12-31T23:59:59Z'
+      responses:
+        '200':
+          description: Link updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LinkSuccessResponse'
+              example:
+                data:
+                  id: 123e4567-e89b-12d3-a456-426614174000
+                  shortcode: newcode
+                  original_url: https://example.com/very/long/url
+                  user_id: user_2abc123
+                  clicks: 42
+                  expires_at: '2024-12-31T23:59:59Z'
+                  created_at: '2024-01-15T10:30:00Z'
+                  updated_at: '2024-01-15T11:00:00Z'
+                message: Link updated successfully
+        '400':
+          description: Bad request - Invalid request body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error:
+                  code: BAD_REQUEST
+                  message: Invalid request body
+        '401':
+          description: Unauthorized - Missing or invalid authentication token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error:
+                  code: UNAUTHORIZED
+                  message: Authentication required
+        '404':
+          description: Link not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error:
+                  code: LINK_NOT_FOUND
+                  message: Link not found
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    delete:
+      tags:
+      - Links
+      summary: Delete a link
+      description: Deletes a shortened link. The link must belong to the authenticated user.
+      operationId: deleteLink
+      security:
+      - BearerAuth: []
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+        description: The UUID of the link to delete
+      responses:
+        '204':
+          description: Link deleted successfully
+        '401':
+          description: Unauthorized - Missing or invalid authentication token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error:
+                  code: UNAUTHORIZED
+                  message: Authentication required
+        '404':
+          description: Link not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error:
+                  code: LINK_NOT_FOUND
+                  message: Link not found
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'

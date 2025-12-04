@@ -1,0 +1,71 @@
+# https://taskfile.dev
+
+version: '3'
+
+vars:
+  BIN_NAME: bin/server
+  MAIN_PATH: ./cmd/main.go
+
+tasks:
+  default:
+    desc: Show available tasks
+    cmds:
+      - task --list
+
+  lint:
+    desc: Run golangci-lint
+    cmds:
+      - golangci-lint run
+    ignore_error: true
+
+  lint-fix:
+    desc: Run golangci-lint with --fix (auto-fixes issues when possible)
+    cmds:
+      - golangci-lint run --fix
+    ignore_error: true
+
+  test:
+    desc: Run tests with coverage (fast, default for quick feedback)
+    cmds:
+      - go test -v -coverprofile=coverage.out ./...
+      - go tool cover -func=coverage.out | tail -1
+
+  test-race:
+    desc: Run tests with race detector and coverage (slower, catches concurrency bugs)
+    cmds:
+      - go test -v -race -coverprofile=coverage.out ./...
+      - go tool cover -func=coverage.out | tail -1
+
+  test-coverage:
+    desc: Show detailed coverage report in browser
+    cmds:
+      - go test -coverprofile=coverage.out ./...
+      - go tool cover -html=coverage.out -o coverage.html
+      - echo "Coverage report generated at coverage.html"
+      - echo "Open it in your browser to see detailed coverage"
+
+  build:
+    desc: Build the application
+    cmds:
+      - go build -o {{.BIN_NAME}} {{.MAIN_PATH}}
+
+  run:
+    desc: Run the application with live reloading (air)
+    cmds:
+      - go run github.com/air-verse/air@latest
+
+  migrate:
+    desc: Run all pending migrations (up)
+    cmds:
+      - ./scripts/migrate-up.sh
+
+  rollback:
+    desc: Rollback the last migration (run corresponding .down.sql file)
+    cmds:
+      - ./scripts/migrate-down.sh
+
+  migrate-status:
+    desc: Show migration status (list all migration files and their applied status)
+    cmds:
+      - ./scripts/migrate-status.sh
+
