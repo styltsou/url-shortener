@@ -76,7 +76,7 @@ export const Route = createFileRoute("/$shortcode")({
 
 // Known referrer sources with their icons
 const KNOWN_REFERRERS = [
-	{ match: /^direct|none$/i, icon: Globe, label: "Direct/None" },
+	{ match: /^direct|none$/i, icon: Globe, label: "Direct" },
 	{
 		match: /twitter|twitter\.com|x\.com/i,
 		icon: Twitter,
@@ -480,7 +480,7 @@ function LinkDetailPage() {
 					</div>
 				</div>
 
-				<div className='grid grid-cols-1 lg:grid-cols-3 gap-8'>
+				<div className='grid grid-cols-1 lg:grid-cols-3 gap-6'>
 					{/* Main Content */}
 					<div className='lg:col-span-2 space-y-6'>
 						{/* Destination Card */}
@@ -638,8 +638,8 @@ function LinkDetailPage() {
 						<Card>
 							<CardHeader>
 								<div className='flex items-center justify-between'>
-									<CardTitle className='text-sm font-semibold uppercase tracking-wider flex items-center gap-2 text-muted-foreground'>
-										<TrendingUp className='w-4 h-4' /> Performance
+									<CardTitle className='text-sm font-semibold uppercase tracking-wider text-muted-foreground'>
+										Performance
 									</CardTitle>
 									<Select
 										value={timeRange}
@@ -666,32 +666,34 @@ function LinkDetailPage() {
 					</div>
 
 					{/* Sidebar Stats */}
-					<div className='grid grid-cols-2 lg:grid-cols-1 gap-6'>
+					<div className='grid grid-cols-2 lg:grid-cols-1 lg:grid-rows-[auto_1fr] gap-6'>
 						<Card>
 							<CardHeader>
-								<CardTitle className='text-sm font-semibold uppercase tracking-wider flex items-center gap-2 text-muted-foreground'>
-									<TrendingUp className='w-4 h-4' /> Total Clicks
+								<CardTitle className='text-sm font-semibold uppercase tracking-wider text-muted-foreground'>
+									Total Clicks
 								</CardTitle>
 							</CardHeader>
 							<CardContent>
-								<p className='text-4xl font-bold tracking-tight text-foreground mb-4'>
-									{url.clicks.toLocaleString()}
-								</p>
-								<div className='flex items-center gap-2 text-sm text-muted-foreground'>
-									<TrendingUp className='w-4 h-4' />
-									<span>+12.5% this week</span>
+								<div className='flex items-baseline justify-between gap-4'>
+									<p className='text-3xl font-bold tracking-tight text-foreground'>
+										{url.clicks.toLocaleString()}
+									</p>
+									<div className='flex items-center gap-1.5 text-sm text-muted-foreground whitespace-nowrap'>
+										<TrendingUp className='w-4 h-4' />
+										<span>+12.5% this week</span>
+									</div>
 								</div>
 							</CardContent>
 						</Card>
 
-						<Card>
+						<Card className='h-full flex flex-col'>
 							<CardHeader>
 								<CardTitle className='text-sm font-semibold uppercase tracking-wider text-muted-foreground'>
 									Top Sources
 								</CardTitle>
 							</CardHeader>
-							<CardContent>
-								<div className='space-y-4'>
+							<CardContent className='flex-1'>
+								<div className='space-y-6'>
 									{processedReferrers.map((item, idx) => {
 										const maxClicks = Math.max(
 											...processedReferrers.map((d) => d.clicks)
@@ -714,7 +716,7 @@ function LinkDetailPage() {
 														{item.clicks}
 													</span>
 												</div>
-												<div className='w-full bg-muted/50 dark:bg-input/50 rounded-full h-2 overflow-hidden'>
+												<div className='w-full bg-muted/80 dark:bg-input/50 rounded-full h-2 overflow-hidden'>
 													<div
 														className='h-full bg-primary rounded-full transition-all duration-150'
 														style={{
