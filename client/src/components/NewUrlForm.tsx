@@ -4,6 +4,7 @@ import {
 	ArrowRight,
 	ChevronRight,
 	Loader2,
+	Calendar as CalendarIcon,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -12,6 +13,13 @@ import {
 	InputGroupText,
 	InputGroupInput,
 } from "@/components/ui/input-group";
+import {
+	Popover,
+	PopoverContent,
+	PopoverTrigger,
+} from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
+import { formatDate } from "@/lib/mock-data";
 
 interface NewUrlFormProps {
 	onShorten: (
@@ -26,15 +34,20 @@ export function NewUrlForm({ onShorten, isLoading }: NewUrlFormProps) {
 	const [originalUrl, setOriginalUrl] = useState("");
 	const [showOptions, setShowOptions] = useState(false);
 	const [customCode, setCustomCode] = useState("");
-	const [expirationDate, setExpirationDate] = useState("");
+	const [expirationDate, setExpirationDate] = useState<Date | undefined>(
+		undefined
+	);
 
 	const handleSubmit = async (e: React.FormEvent) => {
 		e.preventDefault();
 		if (!originalUrl) return;
-		await onShorten(originalUrl, customCode, expirationDate);
+		const expirationDateString = expirationDate
+			? expirationDate.toISOString().split("T")[0]
+			: undefined;
+		await onShorten(originalUrl, customCode, expirationDateString);
 		setOriginalUrl("");
 		setCustomCode("");
-		setExpirationDate("");
+		setExpirationDate(undefined);
 		setShowOptions(false);
 	};
 
@@ -61,7 +74,7 @@ export function NewUrlForm({ onShorten, isLoading }: NewUrlFormProps) {
 							onChange={(e) => setOriginalUrl(e.target.value)}
 							placeholder='Paste a long URL here...'
 							required
-							className='h-12 pl-12 text-base md:text-lg w-full transition-all focus-visible:ring-2 focus-visible:ring-offset-2'
+							className='h-12 pl-12 text-base md:text-lg w-full'
 						/>
 					</div>
 					<Button
@@ -78,7 +91,7 @@ export function NewUrlForm({ onShorten, isLoading }: NewUrlFormProps) {
 						</span>
 						{isLoading && (
 							<div className='absolute inset-0 flex items-center justify-center'>
-								<Loader2 className='w-5 h-5 animate-spin' />
+								<Loader2 className='w-6 h-6 animate-spin' />
 							</div>
 						)}
 					</Button>
@@ -89,11 +102,11 @@ export function NewUrlForm({ onShorten, isLoading }: NewUrlFormProps) {
 						type='button'
 						variant='ghost'
 						onClick={() => setShowOptions(!showOptions)}
-						className='text-sm font-medium text-muted-foreground hover:text-foreground'
+						className='text-sm font-medium text-muted-foreground hover:text-foreground group'
 					>
 						{showOptions ? "Hide Options" : "Show customization options"}
 						<ChevronRight
-							className={`w-3 h-3 transition-transform ${
+							className={`w-3 h-3 transition-all group-hover:text-foreground ${
 								showOptions ? "rotate-90" : "rotate-0"
 							}`}
 						/>
@@ -102,10 +115,10 @@ export function NewUrlForm({ onShorten, isLoading }: NewUrlFormProps) {
 
 				<div
 					className={`overflow-hidden transition-all duration-300 ease-in-out ${
-						showOptions ? "max-h-40 opacity-100 mt-6" : "max-h-0 opacity-0"
+						showOptions ? "max-h-48 opacity-100 mt-6" : "max-h-0 opacity-0"
 					}`}
 				>
-					<div className='grid grid-cols-1 md:grid-cols-2 gap-6 px-1'>
+					<div className='grid grid-cols-1 md:grid-cols-2 gap-3 px-1 pb-2'>
 						<div>
 							<label className='block text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2'>
 								Custom Alias
@@ -126,12 +139,32 @@ export function NewUrlForm({ onShorten, isLoading }: NewUrlFormProps) {
 							<label className='block text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2'>
 								Expiration Date
 							</label>
-							<Input
-								type='date'
-								value={expirationDate}
-								onChange={(e) => setExpirationDate(e.target.value)}
-								className='bg-transparent'
-							/>
+							<Popover>
+								<PopoverTrigger asChild>
+									<Button
+										variant='outline'
+										className={`w-full justify-start text-left font-normal bg-input ${
+											!expirationDate ? "text-muted-foreground" : ""
+										}`}
+									>
+										<CalendarIcon className='mr-2 h-4 w-4' />
+										{expirationDate ? (
+											formatDate(expirationDate)
+										) : (
+											<span>Pick a date</span>
+										)}
+									</Button>
+								</PopoverTrigger>
+								<PopoverContent className='w-auto p-0' align='start'>
+									<Calendar
+										mode='single'
+										selected={expirationDate}
+										onSelect={setExpirationDate}
+										disabled={(date) => date < new Date()}
+										initialFocus
+									/>
+								</PopoverContent>
+							</Popover>
 						</div>
 					</div>
 				</div>

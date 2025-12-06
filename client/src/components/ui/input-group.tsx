@@ -9,7 +9,7 @@ const InputGroup = React.forwardRef<
     <div
       ref={ref}
       className={cn(
-        "flex h-9 w-full items-center rounded-md border border-input bg-transparent px-3 py-1 shadow-xs transition-all focus-within:border-ring focus-within:ring-ring/50 focus-within:ring-[3px] dark:bg-input/30",
+        "flex h-9 w-full items-center rounded-md border dark:border-input bg-input dark:bg-input/30 px-3 py-1 shadow-xs transition-all focus-within:border-ring focus-within:ring-ring/50 focus-within:ring-[3px]",
         className
       )}
       {...props}
@@ -27,7 +27,7 @@ const InputGroupText = React.forwardRef<
   return (
     <span
       ref={ref}
-      className={cn("text-sm text-muted-foreground mr-2 shrink-0", className)}
+      className={cn("text-sm text-muted-foreground mr-1 shrink-0", className)}
       {...props}
     />
   )

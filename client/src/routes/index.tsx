@@ -14,11 +14,11 @@ export const Route = createFileRoute('/')({
 
 function LinksListSkeleton() {
   return (
-    <div className="space-y-4">
+    <div className="space-y-2">
       {[1, 2, 3].map((i) => (
-        <Card key={i} className="p-5">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div className="flex-1 space-y-3">
+        <Card key={i} className="py-1 px-4">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-2">
+            <div className="flex-1 space-y-1">
               <Skeleton className="h-7 w-48 sm:w-64" />
               <Skeleton className="h-4 w-full sm:w-96" />
             </div>
@@ -77,7 +77,7 @@ function LinksPage() {
       <div className="max-w-4xl mx-auto">
         <NewUrlForm onShorten={handleShorten} isLoading={createLink.isPending} />
 
-        <div className="flex items-end justify-between mb-6 pb-2 border-b border-border">
+        <div className="flex items-end justify-between mb-4 pb-2 border-b border-border">
           <h2 className="text-lg font-bold text-foreground tracking-tight">Active Links</h2>
           <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
             {isLoading ? 'Loading...' : `${urls.length} Total`}
@@ -87,7 +87,7 @@ function LinksPage() {
         {isLoading ? (
           <LinksListSkeleton />
         ) : (
-          <div className="space-y-4">
+          <div className="space-y-2">
             {urls.map((url) => (
               <UrlCard key={url.id} url={url} />
             ))}

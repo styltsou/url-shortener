@@ -20,9 +20,12 @@ export interface UpdateLinkRequest {
   expires_at?: string | null // ISO date string or null
 }
 
+import { generateMockAnalytics } from '@/lib/mock-data'
+import type { Url } from './url'
+
 // Convert API Link to app Url type
-export function linkToUrl(link: Link): import('./url').Url {
-  return {
+export function linkToUrl(link: Link): Url {
+  const url: Url = {
     id: link.id,
     originalUrl: link.original_url,
     shortCode: link.shortcode,
@@ -34,5 +37,12 @@ export function linkToUrl(link: Link): import('./url').Url {
       referrers_data: [], // TODO: Fetch from analytics endpoint when available
     },
   }
+
+  // Generate mock analytics if backend doesn't provide them
+  if (url.analytics.clicks_data.length === 0 && url.analytics.referrers_data.length === 0) {
+    url.analytics = generateMockAnalytics(url, '7days')
+  }
+
+  return url
 }
 

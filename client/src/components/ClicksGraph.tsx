@@ -30,6 +30,10 @@ export function ClicksGraph({ data }: ClicksGraphProps) {
     })
   }, [])
 
+  // Calculate Y-axis domain to ensure integer-only ticks
+  const maxValue = Math.max(...data.map((d) => d.clicks), 0)
+  const yAxisDomain: [number, number] = [0, Math.max(maxValue, 1)]
+
   return (
     <div className="h-[300px] w-full">
       <ResponsiveContainer width="100%" height="100%">
@@ -52,6 +56,9 @@ export function ClicksGraph({ data }: ClicksGraphProps) {
             axisLine={false}
             tickLine={false}
             tick={{ fontSize: 12, fill: colors.mutedForeground }}
+            allowDecimals={false}
+            domain={yAxisDomain}
+            tickFormatter={(value) => Math.floor(value).toString()}
           />
           <Tooltip
             contentStyle={{
@@ -64,6 +71,7 @@ export function ClicksGraph({ data }: ClicksGraphProps) {
             itemStyle={{ color: colors.popoverForeground }}
             labelStyle={{ color: colors.mutedForeground, marginBottom: '4px' }}
             cursor={{ stroke: colors.primary, strokeWidth: 1, strokeDasharray: '4 4' }}
+            formatter={(value: number) => [Math.floor(value).toString(), 'Clicks']}
           />
           <Area
             type="monotone"
@@ -72,6 +80,9 @@ export function ClicksGraph({ data }: ClicksGraphProps) {
             strokeWidth={3}
             fillOpacity={1}
             fill="url(#colorClicks)"
+            isAnimationActive={true}
+            animationDuration={200}
+            connectNulls={false}
           />
         </AreaChart>
       </ResponsiveContainer>

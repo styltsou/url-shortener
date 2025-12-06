@@ -1,11 +1,12 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useAuth } from '@clerk/clerk-react'
 import { Navigate } from '@tanstack/react-router'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import {
   ArrowRight,
-  Calendar,
+  Calendar as CalendarIcon,
   Copy,
+  CopyCheck,
   CheckCircle2,
   Edit,
   Save,
@@ -14,19 +15,102 @@ import {
   TrendingUp,
   Trash2,
   Loader2,
+  ExternalLink,
+  Facebook,
+  Instagram,
+  Twitter,
+  Linkedin,
+  MessageCircle,
+  Mail,
+  Newspaper,
+  MoreHorizontal as MoreHorizontalIcon,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { Calendar } from '@/components/ui/calendar'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog'
 import { ClicksGraph } from '@/components/ClicksGraph'
-import { formatDate } from '@/lib/mock-data'
+import { formatDate, generateMockAnalytics } from '@/lib/mock-data'
 import { useLinks, useUpdateLink, useDeleteLink } from '@/hooks/use-links'
 import { toast } from 'sonner'
 
 export const Route = createFileRoute('/$shortcode')({
   component: LinkDetailPage,
 })
+
+// Known referrer sources with their icons
+const KNOWN_REFERRERS = [
+  { match: /^direct|none$/i, icon: Globe, label: 'Direct/None' },
+  { match: /twitter|twitter\.com|x\.com/i, icon: Twitter, label: 'X (Twitter)' },
+  { match: /instagram|instagram\.com/i, icon: Instagram, label: 'Instagram' },
+  { match: /facebook|facebook\.com/i, icon: Facebook, label: 'Facebook' },
+  { match: /linkedin|linkedin\.com/i, icon: Linkedin, label: 'LinkedIn' },
+  { match: /reddit|reddit\.com/i, icon: MessageCircle, label: 'Reddit' },
+  { match: /^email$/i, icon: Mail, label: 'Email' },
+  { match: /newsletter/i, icon: Newspaper, label: 'Newsletter' },
+]
+
+// Get icon component for a referrer
+function getReferrerIcon(referrer: string) {
+  const normalized = referrer.toLowerCase().trim()
+  const known = KNOWN_REFERRERS.find((r) => r.match.test(normalized))
+  return known ? known.icon : null
+}
+
+// Get display label for a referrer
+function getReferrerLabel(referrer: string): string {
+  const normalized = referrer.toLowerCase().trim()
+  const known = KNOWN_REFERRERS.find((r) => r.match.test(normalized))
+  return known ? known.label : referrer
+}
+
+// Process referrers data: merge unknown sources into "Other"
+function processReferrersData(
+  referrersData: Array<{ referrer: string; clicks: number }>
+): Array<{ referrer: string; clicks: number }> {
+  const known: Array<{ referrer: string; clicks: number }> = []
+  let otherClicks = 0
+
+  referrersData.forEach((item) => {
+    const icon = getReferrerIcon(item.referrer)
+    if (icon) {
+      // Known referrer - use standardized label
+      const label = getReferrerLabel(item.referrer)
+      const existing = known.find((k) => k.referrer === label)
+      if (existing) {
+        existing.clicks += item.clicks
+      } else {
+        known.push({ referrer: label, clicks: item.clicks })
+      }
+    } else {
+      // Unknown referrer - add to "Other"
+      otherClicks += item.clicks
+    }
+  })
+
+  // Sort by clicks descending
+  known.sort((a, b) => b.clicks - a.clicks)
+
+  // Add "Other" if there are unknown sources
+  if (otherClicks > 0) {
+    known.push({ referrer: 'Other', clicks: otherClicks })
+  }
+
+  return known
+}
 
 function LinkDetailPage() {
   const { shortcode } = Route.useParams()
@@ -38,19 +122,33 @@ function LinkDetailPage() {
   const [isEditing, setIsEditing] = useState(false)
   const [copied, setCopied] = useState(false)
   const [originalUrlInput, setOriginalUrlInput] = useState('')
-  const [expirationDateInput, setExpirationDateInput] = useState('')
+  const [expirationDate, setExpirationDate] = useState<Date | undefined>(undefined)
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [timeRange, setTimeRange] = useState<'7days' | '30days'>('7days')
 
   const url = urls.find((u) => u.shortCode === shortcode)
+
+  // Generate analytics data based on selected time range
+  const analyticsData = useMemo(() => {
+    if (!url) return null
+    return generateMockAnalytics(url, timeRange)
+  }, [url, timeRange])
+
+  // Process referrers data to merge unknown sources into "Other"
+  const processedReferrers = useMemo(() => {
+    const referrersData = analyticsData?.referrers_data || url?.analytics.referrers_data || []
+    return processReferrersData(referrersData)
+  }, [analyticsData, url])
 
   // Initialize form state when entering edit mode
   useEffect(() => {
     if (isEditing && url && !originalUrlInput) {
       setOriginalUrlInput(url.originalUrl)
-      setExpirationDateInput(url.expiresAt ? new Date(url.expiresAt).toISOString().split('T')[0] : '')
+      setExpirationDate(url.expiresAt ? new Date(url.expiresAt) : undefined)
     }
     if (!isEditing) {
       setOriginalUrlInput('')
-      setExpirationDateInput('')
+      setExpirationDate(undefined)
     }
   }, [isEditing, url, originalUrlInput])
 
@@ -93,7 +191,7 @@ function LinkDetailPage() {
     await updateLink.mutateAsync({
       id: url.id,
       data: {
-        expires_at: expirationDateInput || null,
+        expires_at: expirationDate ? expirationDate.toISOString().split('T')[0] : null,
         // TODO: Add original_url update when backend supports it
       },
     })
@@ -102,18 +200,26 @@ function LinkDetailPage() {
 
   const handleDelete = async () => {
     if (!url) return
-    
-    if (window.confirm('Are you sure you want to delete this short URL? This action cannot be undone.')) {
-      await deleteLink.mutateAsync(url.id)
-      navigate({ to: '/' })
-    }
+    await deleteLink.mutateAsync(url.id)
+    navigate({ to: '/' })
   }
+
+  const [destinationCopied, setDestinationCopied] = useState(false)
 
   const handleCopy = () => {
     navigator.clipboard.writeText(`https://short.ly/${url.shortCode}`)
     setCopied(true)
     toast.success('Copied to clipboard')
     setTimeout(() => setCopied(false), 2000)
+  }
+
+  const handleCopyDestination = (e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    navigator.clipboard.writeText(url.originalUrl)
+    setDestinationCopied(true)
+    toast.success('Destination URL copied to clipboard')
+    setTimeout(() => setDestinationCopied(false), 2000)
   }
 
   return (
@@ -123,11 +229,9 @@ function LinkDetailPage() {
           <Button
             variant="ghost"
             onClick={() => navigate({ to: '/' })}
-            className="group flex items-center text-sm font-medium text-muted-foreground hover:text-foreground mb-4"
+            className="mb-4 -ml-2"
           >
-            <div className="p-1 rounded-full bg-muted group-hover:bg-accent mr-2 transition-colors">
-              <ArrowRight className="w-4 h-4 rotate-180" />
-            </div>
+            <ArrowRight className="w-4 h-4 rotate-180 mr-0.5" />
             Back to dashboard
           </Button>
 
@@ -136,11 +240,11 @@ function LinkDetailPage() {
               <div className="flex items-center gap-3">
                 <h1 className="text-3xl font-bold text-foreground tracking-tight">short.ly/{url.shortCode}</h1>
                 <Button variant="ghost" size="icon" onClick={handleCopy} className="text-muted-foreground hover:text-foreground">
-                  {copied ? <CheckCircle2 className="w-6 h-6 text-primary" /> : <Copy className="w-6 h-6" />}
+                  {copied ? <CopyCheck className="w-6 h-6 text-primary" /> : <Copy className="w-6 h-6" />}
                 </Button>
               </div>
               <div className="flex items-center gap-2 mt-2 text-muted-foreground text-sm">
-                <Calendar className="w-4 h-4" />
+                <CalendarIcon className="w-4 h-4" />
                 <span>Created {formatDate(url.createdAt)}</span>
               </div>
             </div>
@@ -160,9 +264,30 @@ function LinkDetailPage() {
                   <Button variant="outline" onClick={() => setIsEditing(true)}>
                     <Edit className="w-4 h-4" /> Edit
                   </Button>
-                  <Button variant="destructive" onClick={handleDelete} disabled={deleteLink.isPending}>
-                    {deleteLink.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />} Delete
-                  </Button>
+                  <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+                    <AlertDialogTrigger asChild>
+                      <Button variant="destructive" disabled={deleteLink.isPending}>
+                        {deleteLink.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />} Delete
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          This action cannot be undone. This will permanently delete the short URL <strong>short.ly/{url.shortCode}</strong> and all its associated data.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction
+                          onClick={handleDelete}
+                          className="bg-destructive text-white hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40 dark:bg-destructive/60"
+                        >
+                          Delete
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
                 </>
               )}
             </div>
@@ -187,15 +312,29 @@ function LinkDetailPage() {
                     onChange={(e) => setOriginalUrlInput(e.target.value)}
                   />
                 ) : (
-                  <div className="flex items-center gap-3 p-4 bg-muted rounded-lg">
+                  <div className="flex items-center gap-3 p-4 bg-background rounded-lg border border-border hover:border-primary/50 transition-all group">
+                    <div className="flex-shrink-0 p-2 bg-muted rounded-md border border-border group-hover:border-primary/50 transition-colors">
+                      <Globe className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors" />
+                    </div>
                     <a
                       href={url.originalUrl}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-foreground break-all hover:text-primary transition-colors font-medium"
+                      className="flex-1 text-foreground break-all group-hover:text-primary transition-colors font-medium min-w-0"
                     >
                       {url.originalUrl}
                     </a>
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={handleCopyDestination}
+                        className={`h-8 w-8 text-muted-foreground hover:text-foreground ${destinationCopied ? 'bg-primary/10 text-primary' : ''}`}
+                      >
+                        {destinationCopied ? <CopyCheck className="w-4 h-4 text-primary" /> : <Copy className="w-4 h-4" />}
+                      </Button>
+                      <ExternalLink className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors" />
+                    </div>
                   </div>
                 )}
 
@@ -204,12 +343,26 @@ function LinkDetailPage() {
                     <Clock className="w-4 h-4" /> Expiration
                   </CardTitle>
                   {isEditing ? (
-                    <Input
-                      type="date"
-                      value={expirationDateInput}
-                      onChange={(e) => setExpirationDateInput(e.target.value)}
-                      className="bg-muted"
-                    />
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button
+                          variant="outline"
+                          className={`w-full justify-start text-left font-normal bg-input ${!expirationDate ? 'text-muted-foreground' : ''}`}
+                        >
+                          <CalendarIcon className="mr-2 h-4 w-4" />
+                          {expirationDate ? formatDate(expirationDate) : <span>Pick a date</span>}
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0" align="start">
+                        <Calendar
+                          mode="single"
+                          selected={expirationDate}
+                          onSelect={setExpirationDate}
+                          disabled={(date) => date < new Date()}
+                          initialFocus
+                        />
+                      </PopoverContent>
+                    </Popover>
                   ) : (
                     <p className={`font-medium ${url.expiresAt && new Date(url.expiresAt) < new Date() ? 'text-destructive' : 'text-muted-foreground'}`}>
                       {url.expiresAt ? formatDate(url.expiresAt) : 'No expiration date set'}
@@ -226,7 +379,7 @@ function LinkDetailPage() {
                   <CardTitle className="text-sm font-semibold uppercase tracking-wider flex items-center gap-2 text-muted-foreground">
                     <TrendingUp className="w-4 h-4" /> Performance
                   </CardTitle>
-                  <Select defaultValue="7days">
+                  <Select value={timeRange} onValueChange={(value: '7days' | '30days') => setTimeRange(value)}>
                     <SelectTrigger className="w-[140px]">
                       <SelectValue />
                     </SelectTrigger>
@@ -238,7 +391,7 @@ function LinkDetailPage() {
                 </div>
               </CardHeader>
               <CardContent>
-                <ClicksGraph data={url.analytics.clicks_data} />
+                <ClicksGraph data={analyticsData?.clicks_data || url.analytics.clicks_data} />
               </CardContent>
             </Card>
           </div>
@@ -266,17 +419,25 @@ function LinkDetailPage() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  {url.analytics.referrers_data.map((item, idx) => {
-                    const maxClicks = Math.max(...url.analytics.referrers_data.map((d) => d.clicks))
+                  {processedReferrers.map((item, idx) => {
+                    const maxClicks = Math.max(...processedReferrers.map((d) => d.clicks))
+                    const IconComponent = getReferrerIcon(item.referrer)
                     return (
                       <div key={idx} className="group">
                         <div className="flex justify-between items-center text-sm mb-1.5">
-                          <span className="font-medium text-foreground">{item.referrer}</span>
+                          <div className="flex items-center gap-2">
+                            {IconComponent ? (
+                              <IconComponent className="w-4 h-4 text-muted-foreground" />
+                            ) : (
+                              <MoreHorizontalIcon className="w-4 h-4 text-muted-foreground" />
+                            )}
+                            <span className="font-medium text-foreground">{item.referrer}</span>
+                          </div>
                           <span className="text-muted-foreground">{item.clicks}</span>
                         </div>
                         <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
                           <div
-                            className="h-full bg-primary rounded-full transition-all duration-500"
+                            className="h-full bg-primary rounded-full transition-all duration-150"
                             style={{ width: `${(item.clicks / maxClicks) * 100}%` }}
                           />
                         </div>
