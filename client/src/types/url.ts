@@ -3,6 +3,11 @@ export interface AnalyticsData {
   referrers_data: Array<{ referrer: string; clicks: number }>
 }
 
+export interface Tag {
+  id: string
+  name: string
+}
+
 export interface Url {
   id: string
   originalUrl: string
@@ -11,5 +16,7 @@ export interface Url {
   expiresAt: Date | null
   clicks: number
   analytics: AnalyticsData
+  tags: Tag[]
+  isActive?: boolean // Active/inactive status
 }
 

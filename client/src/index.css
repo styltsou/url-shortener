@@ -187,4 +187,36 @@
     @apply bg-background text-foreground;
     letter-spacing: var(--tracking-normal);
   }
+  
+  /* Custom scrollbar styles */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+  }
+  
+  *::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  
+  *::-webkit-scrollbar-thumb {
+    background-color: var(--border);
+    border-radius: 9999px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+    transition: background-color 0.2s ease;
+  }
+  
+  *::-webkit-scrollbar-thumb:hover {
+    background-color: var(--muted-foreground);
+    opacity: 0.3;
+  }
+  
+  *::-webkit-scrollbar-corner {
+    background: transparent;
+  }
 }
