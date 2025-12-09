@@ -1,0 +1,6 @@
+# Guides directory (learning materials, not part of the project)
+guides/
+
+# Don't commit this gitignore file
+.gitignore
+

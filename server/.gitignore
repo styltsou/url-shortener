@@ -3,6 +3,12 @@
 /build/
 /dist/
 /out/
+main
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
 
 # Dependency directories
 vendor/
@@ -28,9 +34,13 @@ Thumbs.db
 *.test
 *.coverprofile
 
+# Temporary directories
+tmp/
+temp/
+*.tmp
+
 # Go module cache and local overrides
-/go.sum
-/go.mod
+# Note: go.sum and go.mod should be committed, so they're NOT ignored
 
 # Misc
 .env

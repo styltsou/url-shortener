@@ -443,7 +443,4 @@ Recommended extensions:
 
 - `ARCHITECTURE.md` - Overall architecture
 - `PROJECT_STRUCTURE.md` - Directory structure
-- `SERVICE_PATTERNS.md` - Service patterns
-- `HANDLER_PATTERNS.md` - Handler patterns
-- `ERROR_HANDLING_GUIDE.md` - Error handling
 

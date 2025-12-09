@@ -62,7 +62,9 @@ func New(linkH *handlers.LinkHandler, logger logger.Logger) *chi.Mux {
 	})
 
 	r.Route("/api/v1", func(r chi.Router) {
-		r.Use(mw.RequireAuth(logger))
+		// TODO: Remove this bypass - development/testing only
+		r.Use(mw.BypassAuth(logger))
+		// r.Use(mw.RequireAuth(logger))  // Uncomment when done testing
 
 		r.Route("/links", func(r chi.Router) {
 			r.Get("/", linkH.ListLinks)
