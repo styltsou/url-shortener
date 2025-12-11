@@ -24,10 +24,14 @@ func TestUnexportedContextKey(t *testing.T) {
 		t.Errorf("String literal should return nil (different type), got %v", val)
 	}
 
-	// Test: Empty context returns empty string
+	// Test: Empty context panics (fail-fast behavior for missing authentication)
 	emptyCtx := context.Background()
-	emptyUserID := GetUserIDFromContext(emptyCtx)
-	if emptyUserID != "" {
-		t.Errorf("Expected empty string for empty context, got %v", emptyUserID)
-	}
+	func() {
+		defer func() {
+			if r := recover(); r == nil {
+				t.Errorf("Expected panic for empty context, but no panic occurred")
+			}
+		}()
+		GetUserIDFromContext(emptyCtx)
+	}()
 }

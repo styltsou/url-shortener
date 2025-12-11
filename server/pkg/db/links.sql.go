@@ -12,10 +12,11 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const deleteLink = `-- name: DeleteLink :execrows
+const deleteLink = `-- name: DeleteLink :one
 UPDATE links
 SET deleted_at = NOW(), updated_at = NOW()
 WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL
+RETURNING id, shortcode, original_url, is_active, expires_at, created_at, updated_at
 `
 
 type DeleteLinkParams struct {
@@ -23,16 +24,34 @@ type DeleteLinkParams struct {
 	UserID string    `json:"user_id"`
 }
 
-func (q *Queries) DeleteLink(ctx context.Context, arg DeleteLinkParams) (int64, error) {
-	result, err := q.db.Exec(ctx, deleteLink, arg.ID, arg.UserID)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
+type DeleteLinkRow struct {
+	ID          uuid.UUID        `json:"id"`
+	Shortcode   string           `json:"shortcode"`
+	OriginalUrl string           `json:"original_url"`
+	IsActive    bool             `json:"is_active"`
+	ExpiresAt   pgtype.Timestamp `json:"expires_at"`
+	CreatedAt   pgtype.Timestamp `json:"created_at"`
+	UpdatedAt   pgtype.Timestamp `json:"updated_at"`
+}
+
+func (q *Queries) DeleteLink(ctx context.Context, arg DeleteLinkParams) (DeleteLinkRow, error) {
+	row := q.db.QueryRow(ctx, deleteLink, arg.ID, arg.UserID)
+	var i DeleteLinkRow
+	err := row.Scan(
+		&i.ID,
+		&i.Shortcode,
+		&i.OriginalUrl,
+		&i.IsActive,
+		&i.ExpiresAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }
 
 const getLinkByIdAndUser = `-- name: GetLinkByIdAndUser :one
-SELECT id, shortcode, original_url, user_id, clicks, expires_at, created_at, updated_at, deleted_at FROM links
+SELECT id, shortcode, original_url, expires_at, is_active, created_at, updated_at
+FROM links
 WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL
 LIMIT 1
 `
@@ -42,87 +61,170 @@ type GetLinkByIdAndUserParams struct {
 	UserID string    `json:"user_id"`
 }
 
-func (q *Queries) GetLinkByIdAndUser(ctx context.Context, arg GetLinkByIdAndUserParams) (Link, error) {
+type GetLinkByIdAndUserRow struct {
+	ID          uuid.UUID        `json:"id"`
+	Shortcode   string           `json:"shortcode"`
+	OriginalUrl string           `json:"original_url"`
+	ExpiresAt   pgtype.Timestamp `json:"expires_at"`
+	IsActive    bool             `json:"is_active"`
+	CreatedAt   pgtype.Timestamp `json:"created_at"`
+	UpdatedAt   pgtype.Timestamp `json:"updated_at"`
+}
+
+func (q *Queries) GetLinkByIdAndUser(ctx context.Context, arg GetLinkByIdAndUserParams) (GetLinkByIdAndUserRow, error) {
 	row := q.db.QueryRow(ctx, getLinkByIdAndUser, arg.ID, arg.UserID)
-	var i Link
+	var i GetLinkByIdAndUserRow
 	err := row.Scan(
 		&i.ID,
 		&i.Shortcode,
 		&i.OriginalUrl,
-		&i.UserID,
-		&i.Clicks,
 		&i.ExpiresAt,
+		&i.IsActive,
 		&i.CreatedAt,
 		&i.UpdatedAt,
-		&i.DeletedAt,
+	)
+	return i, err
+}
+
+const getLinkByShortcodeAndUser = `-- name: GetLinkByShortcodeAndUser :one
+SELECT 
+    l.id,
+    l.shortcode,
+    l.original_url,
+    l.expires_at,
+    l.is_active,
+    l.created_at,
+    l.updated_at,
+    COALESCE(
+        json_agg(
+            json_build_object(
+                'id', t.id,
+                'name', t.name,
+                'created_at', t.created_at
+            )
+        ) FILTER (WHERE t.id IS NOT NULL),
+        '[]'::json
+    ) as tags
+FROM links l
+LEFT JOIN link_tags lt ON l.id = lt.link_id
+LEFT JOIN tags t ON lt.tag_id = t.id
+WHERE l.shortcode = $1 
+  AND l.user_id = $2 
+  AND l.deleted_at IS NULL
+GROUP BY l.id
+`
+
+type GetLinkByShortcodeAndUserParams struct {
+	Shortcode string `json:"shortcode"`
+	UserID    string `json:"user_id"`
+}
+
+type GetLinkByShortcodeAndUserRow struct {
+	ID          uuid.UUID        `json:"id"`
+	Shortcode   string           `json:"shortcode"`
+	OriginalUrl string           `json:"original_url"`
+	ExpiresAt   pgtype.Timestamp `json:"expires_at"`
+	IsActive    bool             `json:"is_active"`
+	CreatedAt   pgtype.Timestamp `json:"created_at"`
+	UpdatedAt   pgtype.Timestamp `json:"updated_at"`
+	Tags        interface{}      `json:"tags"`
+}
+
+func (q *Queries) GetLinkByShortcodeAndUser(ctx context.Context, arg GetLinkByShortcodeAndUserParams) (GetLinkByShortcodeAndUserRow, error) {
+	row := q.db.QueryRow(ctx, getLinkByShortcodeAndUser, arg.Shortcode, arg.UserID)
+	var i GetLinkByShortcodeAndUserRow
+	err := row.Scan(
+		&i.ID,
+		&i.Shortcode,
+		&i.OriginalUrl,
+		&i.ExpiresAt,
+		&i.IsActive,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Tags,
 	)
 	return i, err
 }
 
 const getLinkForRedirect = `-- name: GetLinkForRedirect :one
-SELECT id, original_url, expires_at, clicks 
+SELECT id, original_url
 FROM links
 WHERE shortcode = $1
 AND deleted_at IS NULL
+AND is_active = true
 AND (expires_at IS NULL OR expires_at > NOW())
 LIMIT 1
 `
 
 type GetLinkForRedirectRow struct {
-	ID          uuid.UUID        `json:"id"`
-	OriginalUrl string           `json:"original_url"`
-	ExpiresAt   pgtype.Timestamp `json:"expires_at"`
-	Clicks      *int32           `json:"clicks"`
+	ID          uuid.UUID `json:"id"`
+	OriginalUrl string    `json:"original_url"`
 }
 
 func (q *Queries) GetLinkForRedirect(ctx context.Context, shortcode string) (GetLinkForRedirectRow, error) {
 	row := q.db.QueryRow(ctx, getLinkForRedirect, shortcode)
 	var i GetLinkForRedirectRow
-	err := row.Scan(
-		&i.ID,
-		&i.OriginalUrl,
-		&i.ExpiresAt,
-		&i.Clicks,
-	)
+	err := row.Scan(&i.ID, &i.OriginalUrl)
 	return i, err
 }
 
-const incrementClicks = `-- name: IncrementClicks :exec
-UPDATE links
-SET clicks = clicks + 1
-WHERE shortcode = $1 AND deleted_at IS NULL
+const listUserLinks = `-- name: ListUserLinks :many
+SELECT 
+    l.id,
+    l.shortcode,
+    l.original_url,
+    l.expires_at,
+    l.is_active,
+    l.created_at,
+    l.updated_at,
+    COALESCE(
+        json_agg(
+            json_build_object(
+                'id', t.id,
+                'name', t.name,
+                'created_at', t.created_at
+            )
+        ) FILTER (WHERE t.id IS NOT NULL),
+        '[]'::json
+    ) as tags
+FROM links l
+LEFT JOIN link_tags lt ON l.id = lt.link_id
+LEFT JOIN tags t ON lt.tag_id = t.id
+WHERE l.user_id = $1 
+  AND l.deleted_at IS NULL
+GROUP BY l.id
+ORDER BY l.created_at DESC
 `
 
-func (q *Queries) IncrementClicks(ctx context.Context, shortcode string) error {
-	_, err := q.db.Exec(ctx, incrementClicks, shortcode)
-	return err
+type ListUserLinksRow struct {
+	ID          uuid.UUID        `json:"id"`
+	Shortcode   string           `json:"shortcode"`
+	OriginalUrl string           `json:"original_url"`
+	ExpiresAt   pgtype.Timestamp `json:"expires_at"`
+	IsActive    bool             `json:"is_active"`
+	CreatedAt   pgtype.Timestamp `json:"created_at"`
+	UpdatedAt   pgtype.Timestamp `json:"updated_at"`
+	Tags        interface{}      `json:"tags"`
 }
 
-const listUserLinks = `-- name: ListUserLinks :many
-SELECT id, shortcode, original_url, user_id, clicks, expires_at, created_at, updated_at, deleted_at FROM links
-WHERE user_id = $1 AND deleted_at IS NULL
-ORDER BY created_at DESC
-`
-
-func (q *Queries) ListUserLinks(ctx context.Context, userID string) ([]Link, error) {
+func (q *Queries) ListUserLinks(ctx context.Context, userID string) ([]ListUserLinksRow, error) {
 	rows, err := q.db.Query(ctx, listUserLinks, userID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Link
+	var items []ListUserLinksRow
 	for rows.Next() {
-		var i Link
+		var i ListUserLinksRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Shortcode,
 			&i.OriginalUrl,
-			&i.UserID,
-			&i.Clicks,
 			&i.ExpiresAt,
+			&i.IsActive,
 			&i.CreatedAt,
 			&i.UpdatedAt,
-			&i.DeletedAt,
+			&i.Tags,
 		); err != nil {
 			return nil, err
 		}
@@ -141,7 +243,7 @@ WHERE NOT EXISTS (
     SELECT 1 FROM links 
     WHERE shortcode = $1::VARCHAR(20) AND deleted_at IS NULL
 )
-RETURNING id, shortcode, original_url, user_id, clicks, expires_at, created_at, updated_at, deleted_at
+RETURNING id, shortcode, original_url, expires_at, is_active, created_at, updated_at
 `
 
 type TryCreateLinkParams struct {
@@ -150,20 +252,28 @@ type TryCreateLinkParams struct {
 	UserID      string `json:"user_id"`
 }
 
+type TryCreateLinkRow struct {
+	ID          uuid.UUID        `json:"id"`
+	Shortcode   string           `json:"shortcode"`
+	OriginalUrl string           `json:"original_url"`
+	ExpiresAt   pgtype.Timestamp `json:"expires_at"`
+	IsActive    bool             `json:"is_active"`
+	CreatedAt   pgtype.Timestamp `json:"created_at"`
+	UpdatedAt   pgtype.Timestamp `json:"updated_at"`
+}
+
 // sqlc.arg(shortcode) sqlc.arg(original_url) sqlc.arg(user_id)
-func (q *Queries) TryCreateLink(ctx context.Context, arg TryCreateLinkParams) (Link, error) {
+func (q *Queries) TryCreateLink(ctx context.Context, arg TryCreateLinkParams) (TryCreateLinkRow, error) {
 	row := q.db.QueryRow(ctx, tryCreateLink, arg.Shortcode, arg.OriginalUrl, arg.UserID)
-	var i Link
+	var i TryCreateLinkRow
 	err := row.Scan(
 		&i.ID,
 		&i.Shortcode,
 		&i.OriginalUrl,
-		&i.UserID,
-		&i.Clicks,
 		&i.ExpiresAt,
+		&i.IsActive,
 		&i.CreatedAt,
 		&i.UpdatedAt,
-		&i.DeletedAt,
 	)
 	return i, err
 }
@@ -172,37 +282,48 @@ const updateLink = `-- name: UpdateLink :one
 UPDATE links
 SET 
     shortcode = COALESCE($3, shortcode),
-    expires_at = COALESCE($4, expires_at),
+    is_active = COALESCE($4, is_active),
+    expires_at = COALESCE($5, expires_at),
     updated_at = NOW()
 WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL
-RETURNING id, shortcode, original_url, user_id, clicks, expires_at, created_at, updated_at, deleted_at
+RETURNING id, shortcode, original_url, is_active, expires_at, created_at, updated_at
 `
 
 type UpdateLinkParams struct {
 	ID        uuid.UUID        `json:"id"`
 	UserID    string           `json:"user_id"`
 	Shortcode *string          `json:"shortcode"`
+	IsActive  *bool            `json:"is_active"`
 	ExpiresAt pgtype.Timestamp `json:"expires_at"`
 }
 
-func (q *Queries) UpdateLink(ctx context.Context, arg UpdateLinkParams) (Link, error) {
+type UpdateLinkRow struct {
+	ID          uuid.UUID        `json:"id"`
+	Shortcode   string           `json:"shortcode"`
+	OriginalUrl string           `json:"original_url"`
+	IsActive    bool             `json:"is_active"`
+	ExpiresAt   pgtype.Timestamp `json:"expires_at"`
+	CreatedAt   pgtype.Timestamp `json:"created_at"`
+	UpdatedAt   pgtype.Timestamp `json:"updated_at"`
+}
+
+func (q *Queries) UpdateLink(ctx context.Context, arg UpdateLinkParams) (UpdateLinkRow, error) {
 	row := q.db.QueryRow(ctx, updateLink,
 		arg.ID,
 		arg.UserID,
 		arg.Shortcode,
+		arg.IsActive,
 		arg.ExpiresAt,
 	)
-	var i Link
+	var i UpdateLinkRow
 	err := row.Scan(
 		&i.ID,
 		&i.Shortcode,
 		&i.OriginalUrl,
-		&i.UserID,
-		&i.Clicks,
+		&i.IsActive,
 		&i.ExpiresAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
-		&i.DeletedAt,
 	)
 	return i, err
 }

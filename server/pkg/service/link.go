@@ -8,8 +8,11 @@ import (
 	"fmt"
 	"math/big"
 	"net/url"
+	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/redis/go-redis/v9"
 	"github.com/styltsou/url-shortener/server/pkg/db"
 	apperrors "github.com/styltsou/url-shortener/server/pkg/errors"
@@ -36,15 +39,14 @@ func generateRandomCode(n int) (string, error) {
 	return string(b), nil
 }
 
-// TODO: Might need  to define an interface for RedisCache
-
-// LinkQueries defines the database operations needed by LinkService
 type LinkQueries interface {
-	TryCreateLink(ctx context.Context, arg db.TryCreateLinkParams) (db.Link, error)
-	ListUserLinks(ctx context.Context, userID string) ([]db.Link, error)
-	GetLinkByIdAndUser(ctx context.Context, arg db.GetLinkByIdAndUserParams) (db.Link, error)
+	TryCreateLink(ctx context.Context, arg db.TryCreateLinkParams) (db.TryCreateLinkRow, error)
 	GetLinkForRedirect(ctx context.Context, shortcode string) (db.GetLinkForRedirectRow, error)
-	DeleteLink(ctx context.Context, arg db.DeleteLinkParams) (int64, error)
+	ListUserLinks(ctx context.Context, userID string) ([]db.ListUserLinksRow, error)
+	GetLinkByIdAndUser(ctx context.Context, arg db.GetLinkByIdAndUserParams) (db.GetLinkByIdAndUserRow, error)
+	GetLinkByShortcodeAndUser(ctx context.Context, arg db.GetLinkByShortcodeAndUserParams) (db.GetLinkByShortcodeAndUserRow, error)
+	UpdateLink(ctx context.Context, arg db.UpdateLinkParams) (db.UpdateLinkRow, error)
+	DeleteLink(ctx context.Context, arg db.DeleteLinkParams) (db.DeleteLinkRow, error)
 }
 
 type LinkService struct {
@@ -61,11 +63,16 @@ func NewLinkService(queries LinkQueries, cache *redis.Client, logger logger.Logg
 	}
 }
 
-func (s *LinkService) CreateShortLink(ctx context.Context, userID string, originalURL string) (db.Link, error) {
+func (s *LinkService) CreateShortLink(ctx context.Context, userID string, originalURL string) (db.TryCreateLinkRow, error) {
 	// Validate URL - return sentinel error that handlers will map
 	if err := validateURL(originalURL); err != nil {
-		return db.Link{}, err
+		return db.TryCreateLinkRow{}, err
 	}
+
+	// NOTE: When custom shortcode support is added (via DTO or separate method):
+	// - Custom shortcode conflicts: Return error to user (don't retry)
+	// - Auto-generated conflicts: Retry internally (current behavior - correct)
+	// This will require checking if shortcode was user-provided vs auto-generated
 
 	const (
 		codeLen     = 9
@@ -75,7 +82,8 @@ func (s *LinkService) CreateShortLink(ctx context.Context, userID string, origin
 	for range maxAttempts {
 		code, err := generateRandomCode(codeLen)
 		if err != nil {
-			return db.Link{}, fmt.Errorf("failed to generate short code: %w", err)
+			return db.TryCreateLinkRow{},
+				fmt.Errorf("failed to generate short code: %w", err)
 		}
 
 		link, err := s.queries.TryCreateLink(ctx, db.TryCreateLinkParams{
@@ -96,10 +104,12 @@ func (s *LinkService) CreateShortLink(ctx context.Context, userID string, origin
 		}
 
 		// Other database error - wrap with context
-		return db.Link{}, fmt.Errorf("failed to create link: %w", err)
+		return db.TryCreateLinkRow{},
+			fmt.Errorf("failed to create link: %w", err)
 	}
 
-	return db.Link{}, fmt.Errorf("failed to create link after %d attempts: %w", maxAttempts, fmt.Errorf("code collision retry limit exceeded"))
+	return db.TryCreateLinkRow{},
+		fmt.Errorf("failed to create link after %d attempts: %w", maxAttempts, fmt.Errorf("code collision retry limit exceeded"))
 }
 
 // validateURL validates that the URL is well-formed and uses http/https
@@ -129,7 +139,7 @@ func validateURL(rawURL string) error {
 	return nil
 }
 
-func (s *LinkService) ListAllLinks(ctx context.Context, userID string) ([]db.Link, error) {
+func (s *LinkService) ListAllLinks(ctx context.Context, userID string) ([]db.ListUserLinksRow, error) {
 	s.logger.Debug("Querying database for user links",
 		zap.String("user_id", userID),
 	)
@@ -140,7 +150,7 @@ func (s *LinkService) ListAllLinks(ctx context.Context, userID string) ([]db.Lin
 			zap.Error(err),
 			zap.String("user_id", userID),
 		)
-		return nil, err
+		return nil, fmt.Errorf("failed to get link: %w", err)
 	}
 
 	s.logger.Debug("Database query completed for ListUserLinks",
@@ -151,21 +161,24 @@ func (s *LinkService) ListAllLinks(ctx context.Context, userID string) ([]db.Lin
 	return links, nil
 }
 
-func (s *LinkService) GetLinkByID(ctx context.Context, id uuid.UUID, userID string) (db.Link, error) {
-	link, err := s.queries.GetLinkByIdAndUser(ctx, db.GetLinkByIdAndUserParams{
-		ID:     id,
-		UserID: userID,
+func (s *LinkService) GetLinkByShortcode(ctx context.Context, userID string, shortcode string) (db.GetLinkByShortcodeAndUserRow, error) {
+	link, err := s.queries.GetLinkByShortcodeAndUser(ctx, db.GetLinkByShortcodeAndUserParams{
+		Shortcode: shortcode,
+		UserID:    userID,
 	})
+
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return db.Link{}, fmt.Errorf("%w: %v", apperrors.LinkNotFound, err)
+			return db.GetLinkByShortcodeAndUserRow{},
+				fmt.Errorf("%w: %v", apperrors.LinkNotFound, err)
 		}
-		return db.Link{}, fmt.Errorf("failed to get link: %w", err)
+		return db.GetLinkByShortcodeAndUserRow{},
+			fmt.Errorf("failed to get link: %w", err)
 	}
+
 	return link, nil
 }
 
-// TODO: here we check the cache first and if we dont find it, we query the db and then save it to cache
 func (s *LinkService) GetOriginalURL(ctx context.Context, code string) (db.GetLinkForRedirectRow, error) {
 	link, err := s.queries.GetLinkForRedirect(ctx, code)
 	if err != nil {
@@ -177,25 +190,75 @@ func (s *LinkService) GetOriginalURL(ctx context.Context, code string) (db.GetLi
 	return link, nil
 }
 
-// TODO Implement the following
-// I should invalidate the cache here
-// This will stay empty untill i actuall see my use case
-func (s *LinkService) UpdateLink(ctx context.Context) {}
+func (s *LinkService) UpdateLink(
+	ctx context.Context,
+	userID string,
+	id uuid.UUID,
+	shortcode *string,
+	isActive *bool,
+	expiresAt *time.Time,
+) (db.UpdateLinkRow, error) {
 
-// TODO: I should invalidate the cache here too
-func (s *LinkService) DeleteLink(ctx context.Context, id uuid.UUID, userID string) error {
-	rowsAffected, err := s.queries.DeleteLink(ctx, db.DeleteLinkParams{
+	var expiresAtTimestamp pgtype.Timestamp
+	if expiresAt != nil {
+		expiresAtTimestamp = pgtype.Timestamp{
+			Time:  *expiresAt,
+			Valid: true,
+		}
+	} else {
+		expiresAtTimestamp = pgtype.Timestamp{Valid: false}
+	}
+
+	updatedLink, err := s.queries.UpdateLink(ctx, db.UpdateLinkParams{
+		UserID:    userID,
+		ID:        id,
+		Shortcode: shortcode,
+		IsActive:  isActive,
+		ExpiresAt: expiresAtTimestamp,
+	})
+
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return db.UpdateLinkRow{},
+				fmt.Errorf("%w: %v", apperrors.LinkNotFound, err)
+		}
+
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			// NOTE: When is_alias field is added, differentiate between:
+			// - Custom alias conflicts: Return error to user (current behavior - correct)
+			// - Auto-generated conflicts: Should retry internally (not applicable for updates)
+			// For now, all conflicts are treated as user-provided custom aliases
+
+			shortcodeStr := "n/a"
+			if shortcode != nil {
+				shortcodeStr = *shortcode
+			}
+
+			return db.UpdateLinkRow{},
+				fmt.Errorf("%w: %s", apperrors.LinkShortcodeTaken, shortcodeStr)
+		}
+
+		return db.UpdateLinkRow{},
+			fmt.Errorf("failed to update link: %w", err)
+	}
+
+	return updatedLink, nil
+}
+
+func (s *LinkService) DeleteLink(ctx context.Context, userID string, id uuid.UUID) (db.DeleteLinkRow, error) {
+	deletedLink, err := s.queries.DeleteLink(ctx, db.DeleteLinkParams{
 		ID:     id,
 		UserID: userID,
 	})
 
 	if err != nil {
-		return fmt.Errorf("failed to delete link: %w", err)
+		if errors.Is(sql.ErrNoRows, err) {
+			return db.DeleteLinkRow{}, fmt.Errorf("%w: %v", apperrors.LinkNotFound, err)
+		}
+
+		return db.DeleteLinkRow{}, fmt.Errorf("failed to delete link: %w", err)
 	}
 
-	if rowsAffected == 0 {
-		return fmt.Errorf("%w: link not found or already deleted", apperrors.LinkNotFound)
-	}
-
-	return nil
+	return deletedLink, nil
 }

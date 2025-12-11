@@ -14,9 +14,22 @@ type Link struct {
 	Shortcode   string           `json:"shortcode"`
 	OriginalUrl string           `json:"original_url"`
 	UserID      string           `json:"user_id"`
-	Clicks      *int32           `json:"clicks"`
 	ExpiresAt   pgtype.Timestamp `json:"expires_at"`
 	CreatedAt   pgtype.Timestamp `json:"created_at"`
 	UpdatedAt   pgtype.Timestamp `json:"updated_at"`
 	DeletedAt   pgtype.Timestamp `json:"deleted_at"`
+	IsActive    bool             `json:"is_active"`
+}
+
+type LinkTag struct {
+	LinkID uuid.UUID `json:"link_id"`
+	TagID  uuid.UUID `json:"tag_id"`
+}
+
+type Tag struct {
+	ID        uuid.UUID        `json:"id"`
+	Name      string           `json:"name"`
+	UserID    string           `json:"user_id"`
+	CreatedAt pgtype.Timestamp `json:"created_at"`
+	UpdatedAt pgtype.Timestamp `json:"updated_at"`
 }

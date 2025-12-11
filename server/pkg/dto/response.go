@@ -6,8 +6,7 @@ import (
 
 // SuccessResponse represents a successful API response
 type SuccessResponse[T any] struct {
-	Data    T      `json:"data"`
-	Message string `json:"message,omitempty"`
+	Data T `json:"data"`
 }
 
 // ErrorResponse represents an error API response

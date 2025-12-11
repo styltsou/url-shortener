@@ -67,9 +67,9 @@ func New(linkH *handlers.LinkHandler, logger logger.Logger) *chi.Mux {
 		// r.Use(mw.RequireAuth(logger))  // Uncomment when done testing
 
 		r.Route("/links", func(r chi.Router) {
-			r.Get("/", linkH.ListLinks)
 			r.With(mw.RequestValidator[dto.CreateLink](logger)).Post("/", linkH.CreateLink)
-			r.Get("/{id}", linkH.GetLink)
+			r.Get("/", linkH.ListLinks)
+			r.Get("/{shortcode}", linkH.GetLink)
 			r.Patch("/{id}", linkH.UpdateLink)
 			r.Delete("/{id}", linkH.DeleteLink)
 		})

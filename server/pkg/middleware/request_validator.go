@@ -21,6 +21,12 @@ var validate = validator.New()
 
 const reqBodyKey contextKey = "request_body"
 
+// ReqBodyKey returns the context key used for request body storage.
+// This is exported for testing purposes.
+func ReqBodyKey() contextKey {
+	return reqBodyKey
+}
+
 // Validator defines the interface for custom validation logic on DTOs.
 // DTOs can implement this interface to add custom validation beyond struct tags.
 type Validator interface {

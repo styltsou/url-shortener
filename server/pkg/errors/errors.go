@@ -12,6 +12,8 @@ const (
 	CodeAuthRequired ErrorCode = "authentication_required"
 	CodeAuthFailed   ErrorCode = "authentication_failed"
 
+	CodeInvalidID ErrorCode = "invalid id"
+
 	CodeLinkNotFound ErrorCode = "link_not_found"
 	CodeInvalidURL   ErrorCode = "invalid_url"
 	CodeLinkExpired  ErrorCode = "link_expired"
@@ -25,9 +27,10 @@ var (
 	AuthRequired = errors.New("Authentication required")
 	AuthFailed   = errors.New("Authentication failed")
 
-	LinkNotFound = errors.New("Link not found")
-	InvalidURL   = errors.New("Invalid URL")
-	LinkExpired  = errors.New("Link expired")
+	LinkNotFound       = errors.New("Link not found")
+	InvalidURL         = errors.New("Invalid URL")
+	LinkExpired        = errors.New("Link expired")
+	LinkShortcodeTaken = errors.New("Shortcode already taken")
 
 	InternalError = errors.New("Internal server error")
 )

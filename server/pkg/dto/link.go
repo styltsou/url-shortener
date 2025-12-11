@@ -16,13 +16,18 @@ type CreateLink struct {
 
 type UpdateLink struct {
 	Shortcode *string    `json:"shortcode"`
+	IsActive  *bool      `json:"is_active"`
 	ExpiresAt *time.Time `json:"expires_at"`
 }
 
-// TODO: is it better to use the error package instead of using fmt.Error()?
 func (dto UpdateLink) Validate() error {
-	if dto.Shortcode == nil && dto.ExpiresAt == nil {
-		return errors.New("At least one of the following fields must be provided: shortcode | expires_at")
+	if dto.Shortcode == nil && dto.IsActive == nil && dto.ExpiresAt == nil {
+		return errors.New("At least one of the following fields must be provided: shortcode | is_active | expires_at")
 	}
+
+	if dto.ExpiresAt != nil && dto.ExpiresAt.Before(time.Now()) {
+		return errors.New("expires_at must be set to a future time")
+	}
+
 	return nil
 }
