@@ -1,8 +1,9 @@
-import { useState, useMemo, useRef, useEffect } from 'react'
-import { Check, ChevronsUpDown, Plus, Loader2 } from 'lucide-react'
+import { useState, useRef, useEffect } from 'react'
+import { Check, ChevronsUpDown, Plus, Tag as TagIcon } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Button } from '@/components/ui/button'
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandSeparator } from '@/components/ui/command'
+import { Spinner } from '@/components/ui/spinner'
 import { cn } from '@/lib/utils'
 import type { Tag } from '@/types/url'
 
@@ -28,27 +29,18 @@ export function TagCombobox({
   const [isCreating, setIsCreating] = useState(false)
 
   // Filter available tags to exclude already selected tags
-  const availableTagsForSelection = useMemo(() => {
-    return availableTags.filter((tag) => !selectedTags.find((t) => t.id === tag.id))
-  }, [availableTags, selectedTags])
+  // React Compiler automatically memoizes this computation
+  const availableTagsForSelection = availableTags.filter(
+    (tag) => !selectedTags.find((t) => t.id === tag.id)
+  )
 
   // Check if we should show "create tag" option
-  const shouldShowCreateOption = useMemo(() => {
-    const searchLower = searchValue.toLowerCase().trim()
-    if (!searchLower) return false
-
-    // Check if tag with this name already exists
-    const tagExists = availableTags.some(
-      (tag) => tag.name.toLowerCase() === searchLower
-    )
-
-    // Check if tag is already selected
-    const tagSelected = selectedTags.some(
-      (tag) => tag.name.toLowerCase() === searchLower
-    )
-
-    return !tagExists && !tagSelected
-  }, [searchValue, availableTags, selectedTags])
+  // React Compiler automatically memoizes this computation
+  const searchLower = searchValue.toLowerCase().trim()
+  const shouldShowCreateOption = searchLower
+    ? !availableTags.some((tag) => tag.name.toLowerCase() === searchLower) &&
+      !selectedTags.some((tag) => tag.name.toLowerCase() === searchLower)
+    : false
 
   // Reset search when popover closes
   useEffect(() => {
@@ -96,10 +88,13 @@ export function TagCombobox({
           variant="outline"
           role="combobox"
           aria-expanded={open}
-          className={cn('w-full justify-between', className)}
+          className={cn('w-full justify-between font-normal bg-input dark:bg-input/30', className)}
         >
-          {placeholder}
-          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+          <div className='flex items-center'>
+            <TagIcon className='mr-2 h-4 w-4' />
+            {placeholder}
+          </div>
+          <ChevronsUpDown className="h-4 w-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
@@ -123,8 +118,8 @@ export function TagCombobox({
                 >
                   {isCreating ? (
                     <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Creating tag...
+                      <Spinner className="mr-2 h-4 w-4" />
+                      Creating tag
                     </>
                   ) : (
                     <>

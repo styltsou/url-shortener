@@ -18,6 +18,11 @@ const (
 	CodeInvalidURL   ErrorCode = "invalid_url"
 	CodeLinkExpired  ErrorCode = "link_expired"
 	CodeCodeTaken    ErrorCode = "code_taken"
+	CodeTagNotFound  ErrorCode = "tag_not_found"
+	CodeTagNameTaken ErrorCode = "tag_name_taken"
+
+	CodeNotFound         ErrorCode = "not_found"
+	CodeMethodNotAllowed ErrorCode = "method_not_allowed"
 
 	CodeInternalError ErrorCode = "internal_server_error"
 )
@@ -31,6 +36,8 @@ var (
 	InvalidURL         = errors.New("Invalid URL")
 	LinkExpired        = errors.New("Link expired")
 	LinkShortcodeTaken = errors.New("Shortcode already taken")
+	TagNotFound        = errors.New("Tag not found")
+	TagNameTaken       = errors.New("Tag name already taken")
 
 	InternalError = errors.New("Internal server error")
 )

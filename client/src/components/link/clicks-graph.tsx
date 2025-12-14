@@ -1,5 +1,5 @@
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 
 interface ClicksGraphProps {
   data: Array<{ name: string; clicks: number }>
@@ -13,6 +13,10 @@ export function ClicksGraph({ data }: ClicksGraphProps) {
     popover: 'hsl(var(--popover))',
     popoverForeground: 'hsl(var(--popover-foreground))',
   })
+
+  const [isAnimationActive, setIsAnimationActive] = useState(false)
+  const isInitialMount = useRef(true)
+  const previousDataRef = useRef<string>('')
 
   useEffect(() => {
     // Get actual computed CSS variable values after mount
@@ -29,6 +33,22 @@ export function ClicksGraph({ data }: ClicksGraphProps) {
       popoverForeground: getColor('--popover-foreground') || 'hsl(var(--popover-foreground))',
     })
   }, [])
+
+  useEffect(() => {
+    // Create a string representation of the data to detect changes
+    const dataString = JSON.stringify(data)
+
+    if (isInitialMount.current) {
+      // On initial mount, disable animation and store the data
+      isInitialMount.current = false
+      previousDataRef.current = dataString
+      setIsAnimationActive(false)
+    } else if (previousDataRef.current !== dataString) {
+      // Data has changed (due to filter), enable animation
+      previousDataRef.current = dataString
+      setIsAnimationActive(true)
+    }
+  }, [data])
 
   // Calculate Y-axis domain to ensure integer-only ticks
   const maxValue = Math.max(...data.map((d) => d.clicks), 0)
@@ -80,7 +100,7 @@ export function ClicksGraph({ data }: ClicksGraphProps) {
             strokeWidth={3}
             fillOpacity={1}
             fill="url(#colorClicks)"
-            isAnimationActive={true}
+            isAnimationActive={isAnimationActive}
             animationDuration={200}
             connectNulls={false}
           />

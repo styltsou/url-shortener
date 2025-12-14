@@ -23,5 +23,5 @@ RETURNING id, name, created_at, updated_at;
 
 -- name: DeleteTags :many
 DELETE FROM tags
-WHERE id = ANY($1::uuid[]) AND user_id = $2
+WHERE id = ANY(sqlc.arg(tag_i_ds)::uuid[]) AND user_id = sqlc.arg(user_id)
 RETURNING id, name, created_at, updated_at;

@@ -18,28 +18,31 @@ import (
 	apperrors "github.com/styltsou/url-shortener/server/pkg/errors"
 	"github.com/styltsou/url-shortener/server/pkg/logger"
 	"github.com/styltsou/url-shortener/server/pkg/middleware"
+	"github.com/styltsou/url-shortener/server/pkg/service"
 )
 
 // mockLinkService is a mock implementation of LinkServiceInterface
 type mockLinkService struct {
-	CreateShortLinkFunc    func(ctx context.Context, userID string, originalURL string) (db.TryCreateLinkRow, error)
-	ListAllLinksFunc       func(ctx context.Context, userID string) ([]db.ListUserLinksRow, error)
+	CreateShortLinkFunc    func(ctx context.Context, userID string, originalURL string, customShortcode *string, expiresAt *time.Time) (db.TryCreateLinkRow, error)
+	ListAllLinksFunc       func(ctx context.Context, userID string, isActive *bool, tagIDs []uuid.UUID, page, limit int) (*service.ListLinksResult, error)
 	GetLinkByShortcodeFunc func(ctx context.Context, userID string, shortcode string) (db.GetLinkByShortcodeAndUserRow, error)
 	GetOriginalURLFunc     func(ctx context.Context, code string) (db.GetLinkForRedirectRow, error)
 	UpdateLinkFunc         func(ctx context.Context, userID string, id uuid.UUID, shortcode *string, isActive *bool, expiresAt *time.Time) (db.UpdateLinkRow, error)
 	DeleteLinkFunc         func(ctx context.Context, userID string, id uuid.UUID) (db.DeleteLinkRow, error)
+	AddTagsToLinkFunc      func(ctx context.Context, userID string, linkID uuid.UUID, tagIDs []uuid.UUID) (db.GetLinkByIdAndUserWithTagsRow, error)
+	RemoveTagsFromLinkFunc func(ctx context.Context, userID string, linkID uuid.UUID, tagIDs []uuid.UUID) (db.GetLinkByIdAndUserWithTagsRow, error)
 }
 
-func (m *mockLinkService) CreateShortLink(ctx context.Context, userID string, originalURL string) (db.TryCreateLinkRow, error) {
+func (m *mockLinkService) CreateShortLink(ctx context.Context, userID string, originalURL string, customShortcode *string, expiresAt *time.Time) (db.TryCreateLinkRow, error) {
 	if m.CreateShortLinkFunc != nil {
-		return m.CreateShortLinkFunc(ctx, userID, originalURL)
+		return m.CreateShortLinkFunc(ctx, userID, originalURL, customShortcode, expiresAt)
 	}
 	return db.TryCreateLinkRow{}, errors.New("not implemented")
 }
 
-func (m *mockLinkService) ListAllLinks(ctx context.Context, userID string) ([]db.ListUserLinksRow, error) {
+func (m *mockLinkService) ListAllLinks(ctx context.Context, userID string, isActive *bool, tagIDs []uuid.UUID, page, limit int) (*service.ListLinksResult, error) {
 	if m.ListAllLinksFunc != nil {
-		return m.ListAllLinksFunc(ctx, userID)
+		return m.ListAllLinksFunc(ctx, userID, isActive, tagIDs, page, limit)
 	}
 	return nil, errors.New("not implemented")
 }
@@ -72,6 +75,19 @@ func (m *mockLinkService) DeleteLink(ctx context.Context, userID string, id uuid
 	return db.DeleteLinkRow{}, errors.New("not implemented")
 }
 
+func (m *mockLinkService) AddTagsToLink(ctx context.Context, userID string, linkID uuid.UUID, tagIDs []uuid.UUID) (db.GetLinkByIdAndUserWithTagsRow, error) {
+	if m.AddTagsToLinkFunc != nil {
+		return m.AddTagsToLinkFunc(ctx, userID, linkID, tagIDs)
+	}
+	return db.GetLinkByIdAndUserWithTagsRow{}, errors.New("not implemented")
+}
+
+func (m *mockLinkService) RemoveTagsFromLink(ctx context.Context, userID string, linkID uuid.UUID, tagIDs []uuid.UUID) (db.GetLinkByIdAndUserWithTagsRow, error) {
+	if m.RemoveTagsFromLinkFunc != nil {
+		return m.RemoveTagsFromLinkFunc(ctx, userID, linkID, tagIDs)
+	}
+	return db.GetLinkByIdAndUserWithTagsRow{}, errors.New("not implemented")
+}
 
 func createTestLogger() logger.Logger {
 	log, err := logger.New("test")
@@ -109,7 +125,7 @@ func TestLinkHandler_CreateLink(t *testing.T) {
 			},
 			userID: "user_123",
 			mockService: &mockLinkService{
-				CreateShortLinkFunc: func(ctx context.Context, userID string, originalURL string) (db.TryCreateLinkRow, error) {
+				CreateShortLinkFunc: func(ctx context.Context, userID string, originalURL string, customShortcode *string, expiresAt *time.Time) (db.TryCreateLinkRow, error) {
 					if userID != "user_123" {
 						t.Errorf("CreateShortLink called with wrong userID: got %s, want user_123", userID)
 					}
@@ -148,7 +164,7 @@ func TestLinkHandler_CreateLink(t *testing.T) {
 			},
 			userID: "user_123",
 			mockService: &mockLinkService{
-				CreateShortLinkFunc: func(ctx context.Context, userID string, originalURL string) (db.TryCreateLinkRow, error) {
+				CreateShortLinkFunc: func(ctx context.Context, userID string, originalURL string, customShortcode *string, expiresAt *time.Time) (db.TryCreateLinkRow, error) {
 					return db.TryCreateLinkRow{}, apperrors.InvalidURL
 				},
 			},
@@ -170,7 +186,7 @@ func TestLinkHandler_CreateLink(t *testing.T) {
 			},
 			userID: "user_123",
 			mockService: &mockLinkService{
-				CreateShortLinkFunc: func(ctx context.Context, userID string, originalURL string) (db.TryCreateLinkRow, error) {
+				CreateShortLinkFunc: func(ctx context.Context, userID string, originalURL string, customShortcode *string, expiresAt *time.Time) (db.TryCreateLinkRow, error) {
 					return db.TryCreateLinkRow{}, errors.New("database error")
 				},
 			},
@@ -241,31 +257,37 @@ func TestLinkHandler_ListLinks(t *testing.T) {
 			name:   "successful list with links",
 			userID: "user_123",
 			mockService: &mockLinkService{
-				ListAllLinksFunc: func(ctx context.Context, userID string) ([]db.ListUserLinksRow, error) {
+				ListAllLinksFunc: func(ctx context.Context, userID string, isActive *bool, tagIDs []uuid.UUID, page, limit int) (*service.ListLinksResult, error) {
 					if userID != "user_123" {
 						t.Errorf("ListAllLinks called with wrong userID: got %s, want user_123", userID)
 					}
-					return []db.ListUserLinksRow{
-						{
-							ID:          uuid.New(),
-							Shortcode:   "abc123",
-							OriginalUrl: "https://example.com",
-							ExpiresAt:   pgtype.Timestamp{Valid: false},
-							IsActive:    true,
-							CreatedAt:   pgtype.Timestamp{Valid: false},
-							UpdatedAt:   pgtype.Timestamp{Valid: false},
-							Tags:        nil,
+					return &service.ListLinksResult{
+						Links: []db.ListUserLinksRow{
+							{
+								ID:          uuid.New(),
+								Shortcode:   "abc123",
+								OriginalUrl: "https://example.com",
+								ExpiresAt:   pgtype.Timestamp{Valid: false},
+								IsActive:    true,
+								CreatedAt:   pgtype.Timestamp{Valid: false},
+								UpdatedAt:   pgtype.Timestamp{Valid: false},
+								Tags:        nil,
+							},
+							{
+								ID:          uuid.New(),
+								Shortcode:   "xyz789",
+								OriginalUrl: "https://example.org",
+								ExpiresAt:   pgtype.Timestamp{Valid: false},
+								IsActive:    true,
+								CreatedAt:   pgtype.Timestamp{Valid: false},
+								UpdatedAt:   pgtype.Timestamp{Valid: false},
+								Tags:        nil,
+							},
 						},
-						{
-							ID:          uuid.New(),
-							Shortcode:   "xyz789",
-							OriginalUrl: "https://example.org",
-							ExpiresAt:   pgtype.Timestamp{Valid: false},
-							IsActive:    true,
-							CreatedAt:   pgtype.Timestamp{Valid: false},
-							UpdatedAt:   pgtype.Timestamp{Valid: false},
-							Tags:        nil,
-						},
+						Total:      2,
+						Page:       1,
+						Limit:      5,
+						TotalPages: 1,
 					}, nil
 				},
 			},
@@ -278,14 +300,25 @@ func TestLinkHandler_ListLinks(t *testing.T) {
 				if len(response.Data) != 2 {
 					t.Errorf("Response Data length = %d, want 2", len(response.Data))
 				}
+				if response.Pagination == nil {
+					t.Errorf("Response Pagination should not be nil")
+				} else if response.Pagination.Total != 2 {
+					t.Errorf("Response Pagination.Total = %d, want 2", response.Pagination.Total)
+				}
 			},
 		},
 		{
 			name:   "successful list with no links",
 			userID: "user_123",
 			mockService: &mockLinkService{
-				ListAllLinksFunc: func(ctx context.Context, userID string) ([]db.ListUserLinksRow, error) {
-					return []db.ListUserLinksRow{}, nil
+				ListAllLinksFunc: func(ctx context.Context, userID string, isActive *bool, tagIDs []uuid.UUID, page, limit int) (*service.ListLinksResult, error) {
+					return &service.ListLinksResult{
+						Links:      []db.ListUserLinksRow{},
+						Total:      0,
+						Page:       1,
+						Limit:      5,
+						TotalPages: 0,
+					}, nil
 				},
 			},
 			expectedStatus: http.StatusOK,
@@ -297,13 +330,18 @@ func TestLinkHandler_ListLinks(t *testing.T) {
 				if len(response.Data) != 0 {
 					t.Errorf("Response Data length = %d, want 0", len(response.Data))
 				}
+				if response.Pagination == nil {
+					t.Errorf("Response Pagination should not be nil")
+				} else if response.Pagination.Total != 0 {
+					t.Errorf("Response Pagination.Total = %d, want 0", response.Pagination.Total)
+				}
 			},
 		},
 		{
 			name:   "service error",
 			userID: "user_123",
 			mockService: &mockLinkService{
-				ListAllLinksFunc: func(ctx context.Context, userID string) ([]db.ListUserLinksRow, error) {
+				ListAllLinksFunc: func(ctx context.Context, userID string, isActive *bool, tagIDs []uuid.UUID, page, limit int) (*service.ListLinksResult, error) {
 					return nil, errors.New("database error")
 				},
 			},
@@ -352,12 +390,12 @@ func TestLinkHandler_UpdateLink(t *testing.T) {
 	isActive := false
 
 	tests := []struct {
-		name            string
-		linkID          string
-		userID          string
-		requestBody     dto.UpdateLink
-		mockService     *mockLinkService
-		expectedStatus  int
+		name             string
+		linkID           string
+		userID           string
+		requestBody      dto.UpdateLink
+		mockService      *mockLinkService
+		expectedStatus   int
 		validateResponse func(t *testing.T, w *httptest.ResponseRecorder)
 	}{
 		{
@@ -533,7 +571,7 @@ func TestLinkHandler_UpdateLink(t *testing.T) {
 			req = req.WithContext(ctx)
 
 			w := httptest.NewRecorder()
-			
+
 			// Create a chi router for testing to handle URL params
 			r := chi.NewRouter()
 			r.Patch("/api/v1/links/{id}", handler.UpdateLink)
@@ -545,6 +583,590 @@ func TestLinkHandler_UpdateLink(t *testing.T) {
 
 			if tt.validateResponse != nil {
 				tt.validateResponse(t, w)
+			}
+		})
+	}
+}
+
+func TestLinkHandler_GetLink(t *testing.T) {
+	userID := "user_123"
+	shortcode := "abc123"
+	linkID := uuid.New()
+
+	tests := []struct {
+		name             string
+		shortcode        string
+		userID           string
+		mockService      *mockLinkService
+		expectedStatus   int
+		validateResponse func(t *testing.T, w *httptest.ResponseRecorder)
+	}{
+		{
+			name:      "successful get",
+			shortcode: shortcode,
+			userID:    userID,
+			mockService: &mockLinkService{
+				GetLinkByShortcodeFunc: func(ctx context.Context, uid string, code string) (db.GetLinkByShortcodeAndUserRow, error) {
+					if uid != userID {
+						t.Errorf("GetLinkByShortcode called with wrong userID: got %s, want %s", uid, userID)
+					}
+					if code != shortcode {
+						t.Errorf("GetLinkByShortcode called with wrong shortcode: got %s, want %s", code, shortcode)
+					}
+					return db.GetLinkByShortcodeAndUserRow{
+						ID:          linkID,
+						Shortcode:   shortcode,
+						OriginalUrl: "https://example.com",
+						IsActive:    true,
+						ExpiresAt:   pgtype.Timestamp{Valid: false},
+						CreatedAt:   pgtype.Timestamp{Valid: false},
+						UpdatedAt:   pgtype.Timestamp{Valid: false},
+					}, nil
+				},
+			},
+			expectedStatus: http.StatusOK,
+			validateResponse: func(t *testing.T, w *httptest.ResponseRecorder) {
+				var response dto.SuccessResponse[db.GetLinkByShortcodeAndUserRow]
+				if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+					t.Fatalf("Failed to unmarshal response: %v", err)
+				}
+				if response.Data.Shortcode != shortcode {
+					t.Errorf("Response Data.Shortcode = %s, want %s", response.Data.Shortcode, shortcode)
+				}
+			},
+		},
+		{
+			name:      "link not found",
+			shortcode: shortcode,
+			userID:    userID,
+			mockService: &mockLinkService{
+				GetLinkByShortcodeFunc: func(ctx context.Context, uid string, code string) (db.GetLinkByShortcodeAndUserRow, error) {
+					return db.GetLinkByShortcodeAndUserRow{}, apperrors.LinkNotFound
+				},
+			},
+			expectedStatus: http.StatusNotFound,
+			validateResponse: func(t *testing.T, w *httptest.ResponseRecorder) {
+				var response dto.ErrorResponse
+				if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+					t.Fatalf("Failed to unmarshal response: %v", err)
+				}
+				if response.Error.Code != apperrors.CodeLinkNotFound {
+					t.Errorf("Response Error.Code = %s, want %s", response.Error.Code, apperrors.CodeLinkNotFound)
+				}
+			},
+		},
+		{
+			name:      "service error",
+			shortcode: shortcode,
+			userID:    userID,
+			mockService: &mockLinkService{
+				GetLinkByShortcodeFunc: func(ctx context.Context, uid string, code string) (db.GetLinkByShortcodeAndUserRow, error) {
+					return db.GetLinkByShortcodeAndUserRow{}, errors.New("database error")
+				},
+			},
+			expectedStatus: http.StatusInternalServerError,
+			validateResponse: func(t *testing.T, w *httptest.ResponseRecorder) {
+				var response dto.ErrorResponse
+				if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+					t.Fatalf("Failed to unmarshal response: %v", err)
+				}
+				if response.Error.Code != apperrors.CodeInternalError {
+					t.Errorf("Response Error.Code = %s, want %s", response.Error.Code, apperrors.CodeInternalError)
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			handler := &LinkHandler{
+				LinkService: tt.mockService,
+				logger:      createTestLogger(),
+			}
+
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/links/"+tt.shortcode, nil)
+			ctx := middleware.WithUserID(req.Context(), tt.userID)
+			req = req.WithContext(ctx)
+
+			w := httptest.NewRecorder()
+
+			// Create a chi router for testing to handle URL params
+			r := chi.NewRouter()
+			r.Get("/api/v1/links/{shortcode}", handler.GetLink)
+			r.ServeHTTP(w, req)
+
+			if w.Code != tt.expectedStatus {
+				t.Errorf("GetLink() status = %d, want %d", w.Code, tt.expectedStatus)
+			}
+
+			if tt.validateResponse != nil {
+				tt.validateResponse(t, w)
+			}
+		})
+	}
+}
+
+func TestLinkHandler_DeleteLink(t *testing.T) {
+	linkID := uuid.New()
+	userID := "user_123"
+
+	tests := []struct {
+		name             string
+		linkID           string
+		userID           string
+		mockService      *mockLinkService
+		expectedStatus   int
+		validateResponse func(t *testing.T, w *httptest.ResponseRecorder)
+	}{
+		{
+			name:   "successful delete",
+			linkID: linkID.String(),
+			userID: userID,
+			mockService: &mockLinkService{
+				DeleteLinkFunc: func(ctx context.Context, uid string, id uuid.UUID) (db.DeleteLinkRow, error) {
+					if id != linkID {
+						t.Errorf("DeleteLink called with wrong ID")
+					}
+					if uid != userID {
+						t.Errorf("DeleteLink called with wrong userID: got %s, want %s", uid, userID)
+					}
+					return db.DeleteLinkRow{
+						ID:          linkID,
+						Shortcode:   "abc123",
+						OriginalUrl: "https://example.com",
+						IsActive:    true,
+						ExpiresAt:   pgtype.Timestamp{Valid: false},
+						CreatedAt:   pgtype.Timestamp{Valid: false},
+						UpdatedAt:   pgtype.Timestamp{Valid: false},
+					}, nil
+				},
+			},
+			expectedStatus: http.StatusOK,
+			validateResponse: func(t *testing.T, w *httptest.ResponseRecorder) {
+				var response dto.SuccessResponse[db.DeleteLinkRow]
+				if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+					t.Fatalf("Failed to unmarshal response: %v", err)
+				}
+				if response.Data.ID != linkID {
+					t.Errorf("Response Data.ID = %s, want %s", response.Data.ID, linkID)
+				}
+			},
+		},
+		{
+			name:           "invalid UUID format",
+			linkID:         "invalid-uuid",
+			userID:         userID,
+			mockService:    &mockLinkService{},
+			expectedStatus: http.StatusBadRequest,
+			validateResponse: func(t *testing.T, w *httptest.ResponseRecorder) {
+				var response dto.ErrorResponse
+				if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+					t.Fatalf("Failed to unmarshal response: %v", err)
+				}
+				if response.Error.Code != apperrors.CodeInvalidID {
+					t.Errorf("Response Error.Code = %s, want %s", response.Error.Code, apperrors.CodeInvalidID)
+				}
+			},
+		},
+		{
+			name:   "link not found",
+			linkID: linkID.String(),
+			userID: userID,
+			mockService: &mockLinkService{
+				DeleteLinkFunc: func(ctx context.Context, uid string, id uuid.UUID) (db.DeleteLinkRow, error) {
+					return db.DeleteLinkRow{}, apperrors.LinkNotFound
+				},
+			},
+			expectedStatus: http.StatusNotFound,
+			validateResponse: func(t *testing.T, w *httptest.ResponseRecorder) {
+				var response dto.ErrorResponse
+				if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+					t.Fatalf("Failed to unmarshal response: %v", err)
+				}
+				if response.Error.Code != apperrors.CodeLinkNotFound {
+					t.Errorf("Response Error.Code = %s, want %s", response.Error.Code, apperrors.CodeLinkNotFound)
+				}
+			},
+		},
+		{
+			name:   "service error",
+			linkID: linkID.String(),
+			userID: userID,
+			mockService: &mockLinkService{
+				DeleteLinkFunc: func(ctx context.Context, uid string, id uuid.UUID) (db.DeleteLinkRow, error) {
+					return db.DeleteLinkRow{}, errors.New("database error")
+				},
+			},
+			expectedStatus: http.StatusInternalServerError,
+			validateResponse: func(t *testing.T, w *httptest.ResponseRecorder) {
+				var response dto.ErrorResponse
+				if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+					t.Fatalf("Failed to unmarshal response: %v", err)
+				}
+				if response.Error.Code != apperrors.CodeInternalError {
+					t.Errorf("Response Error.Code = %s, want %s", response.Error.Code, apperrors.CodeInternalError)
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			handler := &LinkHandler{
+				LinkService: tt.mockService,
+				logger:      createTestLogger(),
+			}
+
+			req := httptest.NewRequest(http.MethodDelete, "/api/v1/links/"+tt.linkID, nil)
+			ctx := middleware.WithUserID(req.Context(), tt.userID)
+			req = req.WithContext(ctx)
+
+			w := httptest.NewRecorder()
+
+			// Create a chi router for testing to handle URL params
+			r := chi.NewRouter()
+			r.Delete("/api/v1/links/{id}", handler.DeleteLink)
+			r.ServeHTTP(w, req)
+
+			if w.Code != tt.expectedStatus {
+				t.Errorf("DeleteLink() status = %d, want %d", w.Code, tt.expectedStatus)
+			}
+
+			if tt.validateResponse != nil {
+				tt.validateResponse(t, w)
+			}
+		})
+	}
+}
+
+func TestLinkHandler_AddTagsToLink(t *testing.T) {
+	linkID := uuid.New()
+	userID := "user_123"
+	tagID1 := uuid.New()
+	tagID2 := uuid.New()
+
+	tests := []struct {
+		name             string
+		linkID           string
+		userID           string
+		requestBody      dto.AddTagsToLink
+		mockService      *mockLinkService
+		expectedStatus   int
+		validateResponse func(t *testing.T, w *httptest.ResponseRecorder)
+	}{
+		{
+			name:   "successful add tags",
+			linkID: linkID.String(),
+			userID: userID,
+			requestBody: dto.AddTagsToLink{
+				TagIDs: []uuid.UUID{tagID1, tagID2},
+			},
+			mockService: &mockLinkService{
+				AddTagsToLinkFunc: func(ctx context.Context, uid string, id uuid.UUID, tagIDs []uuid.UUID) (db.GetLinkByIdAndUserWithTagsRow, error) {
+					if id != linkID {
+						t.Errorf("AddTagsToLink called with wrong linkID")
+					}
+					if uid != userID {
+						t.Errorf("AddTagsToLink called with wrong userID: got %s, want %s", uid, userID)
+					}
+					if len(tagIDs) != 2 || tagIDs[0] != tagID1 || tagIDs[1] != tagID2 {
+						t.Errorf("AddTagsToLink called with wrong tagIDs")
+					}
+					return db.GetLinkByIdAndUserWithTagsRow{
+						ID:          linkID,
+						Shortcode:   "abc123",
+						OriginalUrl: "https://example.com",
+						IsActive:    true,
+						ExpiresAt:   pgtype.Timestamp{Valid: false},
+						CreatedAt:   pgtype.Timestamp{Valid: false},
+						UpdatedAt:   pgtype.Timestamp{Valid: false},
+						Tags:        []interface{}{},
+					}, nil
+				},
+			},
+			expectedStatus: http.StatusOK,
+			validateResponse: func(t *testing.T, w *httptest.ResponseRecorder) {
+				var response dto.SuccessResponse[db.GetLinkByIdAndUserWithTagsRow]
+				if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+					t.Fatalf("Failed to unmarshal response: %v", err)
+				}
+				if response.Data.ID != linkID {
+					t.Errorf("Response Data.ID = %s, want %s", response.Data.ID, linkID)
+				}
+			},
+		},
+		{
+			name:   "invalid UUID format",
+			linkID: "invalid-uuid",
+			userID: userID,
+			requestBody: dto.AddTagsToLink{
+				TagIDs: []uuid.UUID{tagID1},
+			},
+			mockService:    &mockLinkService{},
+			expectedStatus: http.StatusBadRequest,
+			validateResponse: func(t *testing.T, w *httptest.ResponseRecorder) {
+				var response dto.ErrorResponse
+				if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+					t.Fatalf("Failed to unmarshal response: %v", err)
+				}
+				if response.Error.Code != apperrors.CodeInvalidID {
+					t.Errorf("Response Error.Code = %s, want %s", response.Error.Code, apperrors.CodeInvalidID)
+				}
+			},
+		},
+		{
+			name:   "service error",
+			linkID: linkID.String(),
+			userID: userID,
+			requestBody: dto.AddTagsToLink{
+				TagIDs: []uuid.UUID{tagID1},
+			},
+			mockService: &mockLinkService{
+				AddTagsToLinkFunc: func(ctx context.Context, uid string, id uuid.UUID, tagIDs []uuid.UUID) (db.GetLinkByIdAndUserWithTagsRow, error) {
+					return db.GetLinkByIdAndUserWithTagsRow{}, errors.New("database error")
+				},
+			},
+			expectedStatus: http.StatusInternalServerError,
+			validateResponse: func(t *testing.T, w *httptest.ResponseRecorder) {
+				var response dto.ErrorResponse
+				if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+					t.Fatalf("Failed to unmarshal response: %v", err)
+				}
+				if response.Error.Code != apperrors.CodeInternalError {
+					t.Errorf("Response Error.Code = %s, want %s", response.Error.Code, apperrors.CodeInternalError)
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			handler := &LinkHandler{
+				LinkService: tt.mockService,
+				logger:      createTestLogger(),
+			}
+
+			bodyBytes, _ := json.Marshal(tt.requestBody)
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/links/"+tt.linkID+"/tags", bytes.NewBuffer(bodyBytes))
+			req.Header.Set("Content-Type", "application/json")
+			ctx := middleware.WithUserID(req.Context(), tt.userID)
+			ctx = context.WithValue(ctx, middleware.ReqBodyKey(), tt.requestBody)
+			req = req.WithContext(ctx)
+
+			w := httptest.NewRecorder()
+
+			// Create a chi router for testing to handle URL params
+			r := chi.NewRouter()
+			r.Post("/api/v1/links/{id}/tags", handler.AddTagsToLink)
+			r.ServeHTTP(w, req)
+
+			if w.Code != tt.expectedStatus {
+				t.Errorf("AddTagsToLink() status = %d, want %d", w.Code, tt.expectedStatus)
+			}
+
+			if tt.validateResponse != nil {
+				tt.validateResponse(t, w)
+			}
+		})
+	}
+}
+
+func TestLinkHandler_RemoveTagsFromLink(t *testing.T) {
+	linkID := uuid.New()
+	userID := "user_123"
+	tagID1 := uuid.New()
+	tagID2 := uuid.New()
+
+	tests := []struct {
+		name             string
+		linkID           string
+		userID           string
+		requestBody      dto.RemoveTagsFromLink
+		mockService      *mockLinkService
+		expectedStatus   int
+		validateResponse func(t *testing.T, w *httptest.ResponseRecorder)
+	}{
+		{
+			name:   "successful remove tags",
+			linkID: linkID.String(),
+			userID: userID,
+			requestBody: dto.RemoveTagsFromLink{
+				TagIDs: []uuid.UUID{tagID1, tagID2},
+			},
+			mockService: &mockLinkService{
+				RemoveTagsFromLinkFunc: func(ctx context.Context, uid string, id uuid.UUID, tagIDs []uuid.UUID) (db.GetLinkByIdAndUserWithTagsRow, error) {
+					if id != linkID {
+						t.Errorf("RemoveTagsFromLink called with wrong linkID")
+					}
+					if uid != userID {
+						t.Errorf("RemoveTagsFromLink called with wrong userID: got %s, want %s", uid, userID)
+					}
+					if len(tagIDs) != 2 || tagIDs[0] != tagID1 || tagIDs[1] != tagID2 {
+						t.Errorf("RemoveTagsFromLink called with wrong tagIDs")
+					}
+					return db.GetLinkByIdAndUserWithTagsRow{
+						ID:          linkID,
+						Shortcode:   "abc123",
+						OriginalUrl: "https://example.com",
+						IsActive:    true,
+						ExpiresAt:   pgtype.Timestamp{Valid: false},
+						CreatedAt:   pgtype.Timestamp{Valid: false},
+						UpdatedAt:   pgtype.Timestamp{Valid: false},
+						Tags:        []interface{}{},
+					}, nil
+				},
+			},
+			expectedStatus: http.StatusOK,
+			validateResponse: func(t *testing.T, w *httptest.ResponseRecorder) {
+				var response dto.SuccessResponse[db.GetLinkByIdAndUserWithTagsRow]
+				if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+					t.Fatalf("Failed to unmarshal response: %v", err)
+				}
+				if response.Data.ID != linkID {
+					t.Errorf("Response Data.ID = %s, want %s", response.Data.ID, linkID)
+				}
+			},
+		},
+		{
+			name:   "invalid UUID format",
+			linkID: "invalid-uuid",
+			userID: userID,
+			requestBody: dto.RemoveTagsFromLink{
+				TagIDs: []uuid.UUID{tagID1},
+			},
+			mockService:    &mockLinkService{},
+			expectedStatus: http.StatusBadRequest,
+			validateResponse: func(t *testing.T, w *httptest.ResponseRecorder) {
+				var response dto.ErrorResponse
+				if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+					t.Fatalf("Failed to unmarshal response: %v", err)
+				}
+				if response.Error.Code != apperrors.CodeInvalidID {
+					t.Errorf("Response Error.Code = %s, want %s", response.Error.Code, apperrors.CodeInvalidID)
+				}
+			},
+		},
+		{
+			name:   "service error",
+			linkID: linkID.String(),
+			userID: userID,
+			requestBody: dto.RemoveTagsFromLink{
+				TagIDs: []uuid.UUID{tagID1},
+			},
+			mockService: &mockLinkService{
+				RemoveTagsFromLinkFunc: func(ctx context.Context, uid string, id uuid.UUID, tagIDs []uuid.UUID) (db.GetLinkByIdAndUserWithTagsRow, error) {
+					return db.GetLinkByIdAndUserWithTagsRow{}, errors.New("database error")
+				},
+			},
+			expectedStatus: http.StatusInternalServerError,
+			validateResponse: func(t *testing.T, w *httptest.ResponseRecorder) {
+				var response dto.ErrorResponse
+				if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+					t.Fatalf("Failed to unmarshal response: %v", err)
+				}
+				if response.Error.Code != apperrors.CodeInternalError {
+					t.Errorf("Response Error.Code = %s, want %s", response.Error.Code, apperrors.CodeInternalError)
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			handler := &LinkHandler{
+				LinkService: tt.mockService,
+				logger:      createTestLogger(),
+			}
+
+			bodyBytes, _ := json.Marshal(tt.requestBody)
+			req := httptest.NewRequest(http.MethodDelete, "/api/v1/links/"+tt.linkID+"/tags", bytes.NewBuffer(bodyBytes))
+			req.Header.Set("Content-Type", "application/json")
+			ctx := middleware.WithUserID(req.Context(), tt.userID)
+			ctx = context.WithValue(ctx, middleware.ReqBodyKey(), tt.requestBody)
+			req = req.WithContext(ctx)
+
+			w := httptest.NewRecorder()
+
+			// Create a chi router for testing to handle URL params
+			r := chi.NewRouter()
+			r.Delete("/api/v1/links/{id}/tags", handler.RemoveTagsFromLink)
+			r.ServeHTTP(w, req)
+
+			if w.Code != tt.expectedStatus {
+				t.Errorf("RemoveTagsFromLink() status = %d, want %d", w.Code, tt.expectedStatus)
+			}
+
+			if tt.validateResponse != nil {
+				tt.validateResponse(t, w)
+			}
+		})
+	}
+}
+
+func TestLinkHandler_Redirect(t *testing.T) {
+	shortcode := "abc123"
+	originalURL := "https://example.com"
+
+	tests := []struct {
+		name           string
+		shortcode      string
+		mockService    *mockLinkService
+		expectedStatus int
+		expectedURL    string
+	}{
+		{
+			name:      "successful redirect",
+			shortcode: shortcode,
+			mockService: &mockLinkService{
+				GetOriginalURLFunc: func(ctx context.Context, code string) (db.GetLinkForRedirectRow, error) {
+					if code != shortcode {
+						t.Errorf("GetOriginalURL called with wrong shortcode: got %s, want %s", code, shortcode)
+					}
+					return db.GetLinkForRedirectRow{
+						ID:          uuid.New(),
+						OriginalUrl: originalURL,
+					}, nil
+				},
+			},
+			expectedStatus: http.StatusFound,
+			expectedURL:    originalURL,
+		},
+		{
+			name:      "link not found",
+			shortcode: shortcode,
+			mockService: &mockLinkService{
+				GetOriginalURLFunc: func(ctx context.Context, code string) (db.GetLinkForRedirectRow, error) {
+					return db.GetLinkForRedirectRow{}, apperrors.LinkNotFound
+				},
+			},
+			expectedStatus: http.StatusNotFound,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			handler := &LinkHandler{
+				LinkService: tt.mockService,
+				logger:      createTestLogger(),
+			}
+
+			req := httptest.NewRequest(http.MethodGet, "/"+tt.shortcode, nil)
+			w := httptest.NewRecorder()
+
+			// Create a chi router for testing to handle URL params
+			r := chi.NewRouter()
+			r.Get("/{shortcode}", handler.Redirect)
+			r.ServeHTTP(w, req)
+
+			if w.Code != tt.expectedStatus {
+				t.Errorf("Redirect() status = %d, want %d", w.Code, tt.expectedStatus)
+			}
+
+			if tt.expectedStatus == http.StatusFound {
+				location := w.Header().Get("Location")
+				if location != tt.expectedURL {
+					t.Errorf("Redirect() Location = %s, want %s", location, tt.expectedURL)
+				}
 			}
 		})
 	}

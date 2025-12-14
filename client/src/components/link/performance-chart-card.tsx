@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
 	Select,
@@ -18,9 +18,8 @@ interface PerformanceChartCardProps {
 export function PerformanceChartCard({ url }: PerformanceChartCardProps) {
 	const [timeRange, setTimeRange] = useState<"7days" | "30days">("7days");
 
-	const analyticsData = useMemo(() => {
-		return generateMockAnalytics(url, timeRange);
-	}, [url, timeRange]);
+	// React Compiler automatically memoizes this computation
+	const analyticsData = generateMockAnalytics(url, timeRange);
 
 	return (
 		<Card>

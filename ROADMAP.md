@@ -417,6 +417,57 @@ DELETE /api/links/:id/preview         - Remove custom preview
 
 ---
 
+### Password-Protected Links
+**Complexity:** Medium
+**Value:** High for privacy-sensitive use cases
+
+**Features:**
+- Set password when creating or editing a link
+- Password prompt before redirecting to destination
+- Optional password hint for users
+- Secure password hashing (bcrypt/argon2)
+- Password reset/change functionality
+- Optional expiration for password-protected links
+- Track password entry attempts (for analytics/security)
+
+**Use Cases:**
+- Sharing sensitive documents or resources
+- Private beta access to products
+- Exclusive content for subscribers
+- Internal company links
+- Time-sensitive secure sharing
+
+**Technical Implementation:**
+- Store password hash in `links` table (password_hash field)
+- Create password entry page/route for protected links
+- Session-based authentication after password entry
+- Optional: Rate limiting on password attempts
+- Optional: Temporary session tokens (expire after X hours)
+
+**UI Components:**
+- Password input field on link create/edit form
+- Password hint field (optional)
+- Password entry modal/page when accessing protected link
+- Visual indicator on link cards showing password protection status
+- Password change/reset option in link settings
+
+**API Endpoints:**
+```
+POST   /api/links/:id/password          - Set/update password
+DELETE /api/links/:id/password          - Remove password protection
+POST   /:shortcode/verify               - Verify password and redirect
+```
+
+**Security Considerations:**
+- Never store plain text passwords
+- Use strong password hashing algorithms
+- Implement rate limiting on password attempts
+- Consider CAPTCHA after failed attempts
+- Secure session management for password verification
+- Optional: Password strength requirements
+
+---
+
 ### Advanced Security Features
 **Features:**
 - Password-protected links

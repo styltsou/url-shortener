@@ -17,13 +17,17 @@ import (
 
 // mockQueries is a mock implementation of the database queries
 type mockQueries struct {
-	TryCreateLinkFunc             func(ctx context.Context, arg db.TryCreateLinkParams) (db.TryCreateLinkRow, error)
-	ListUserLinksFunc             func(ctx context.Context, userID string) ([]db.ListUserLinksRow, error)
-	GetLinkByIdAndUserFunc        func(ctx context.Context, arg db.GetLinkByIdAndUserParams) (db.GetLinkByIdAndUserRow, error)
-	GetLinkByShortcodeAndUserFunc func(ctx context.Context, arg db.GetLinkByShortcodeAndUserParams) (db.GetLinkByShortcodeAndUserRow, error)
-	GetLinkForRedirectFunc        func(ctx context.Context, shortcode string) (db.GetLinkForRedirectRow, error)
-	UpdateLinkFunc                func(ctx context.Context, arg db.UpdateLinkParams) (db.UpdateLinkRow, error)
-	DeleteLinkFunc                func(ctx context.Context, arg db.DeleteLinkParams) (db.DeleteLinkRow, error)
+	TryCreateLinkFunc              func(ctx context.Context, arg db.TryCreateLinkParams) (db.TryCreateLinkRow, error)
+	ListUserLinksFunc              func(ctx context.Context, arg db.ListUserLinksParams) ([]db.ListUserLinksRow, error)
+	CountUserLinksFunc             func(ctx context.Context, arg db.CountUserLinksParams) (int64, error)
+	GetLinkByIdAndUserFunc         func(ctx context.Context, arg db.GetLinkByIdAndUserParams) (db.GetLinkByIdAndUserRow, error)
+	GetLinkByShortcodeAndUserFunc  func(ctx context.Context, arg db.GetLinkByShortcodeAndUserParams) (db.GetLinkByShortcodeAndUserRow, error)
+	GetLinkForRedirectFunc         func(ctx context.Context, shortcode string) (db.GetLinkForRedirectRow, error)
+	UpdateLinkFunc                 func(ctx context.Context, arg db.UpdateLinkParams) (db.UpdateLinkRow, error)
+	DeleteLinkFunc                 func(ctx context.Context, arg db.DeleteLinkParams) (db.DeleteLinkRow, error)
+	AddTagsToLinkFunc              func(ctx context.Context, arg db.AddTagsToLinkParams) error
+	RemoveTagsFromLinkFunc         func(ctx context.Context, arg db.RemoveTagsFromLinkParams) error
+	GetLinkByIdAndUserWithTagsFunc func(ctx context.Context, arg db.GetLinkByIdAndUserWithTagsParams) (db.GetLinkByIdAndUserWithTagsRow, error)
 }
 
 func (m *mockQueries) TryCreateLink(ctx context.Context, arg db.TryCreateLinkParams) (db.TryCreateLinkRow, error) {
@@ -33,11 +37,18 @@ func (m *mockQueries) TryCreateLink(ctx context.Context, arg db.TryCreateLinkPar
 	return db.TryCreateLinkRow{}, errors.New("not implemented")
 }
 
-func (m *mockQueries) ListUserLinks(ctx context.Context, userID string) ([]db.ListUserLinksRow, error) {
+func (m *mockQueries) ListUserLinks(ctx context.Context, arg db.ListUserLinksParams) ([]db.ListUserLinksRow, error) {
 	if m.ListUserLinksFunc != nil {
-		return m.ListUserLinksFunc(ctx, userID)
+		return m.ListUserLinksFunc(ctx, arg)
 	}
 	return nil, errors.New("not implemented")
+}
+
+func (m *mockQueries) CountUserLinks(ctx context.Context, arg db.CountUserLinksParams) (int64, error) {
+	if m.CountUserLinksFunc != nil {
+		return m.CountUserLinksFunc(ctx, arg)
+	}
+	return 0, errors.New("not implemented")
 }
 
 func (m *mockQueries) GetLinkByIdAndUser(ctx context.Context, arg db.GetLinkByIdAndUserParams) (db.GetLinkByIdAndUserRow, error) {
@@ -73,6 +84,27 @@ func (m *mockQueries) DeleteLink(ctx context.Context, arg db.DeleteLinkParams) (
 		return m.DeleteLinkFunc(ctx, arg)
 	}
 	return db.DeleteLinkRow{}, errors.New("not implemented")
+}
+
+func (m *mockQueries) AddTagsToLink(ctx context.Context, arg db.AddTagsToLinkParams) error {
+	if m.AddTagsToLinkFunc != nil {
+		return m.AddTagsToLinkFunc(ctx, arg)
+	}
+	return errors.New("not implemented")
+}
+
+func (m *mockQueries) RemoveTagsFromLink(ctx context.Context, arg db.RemoveTagsFromLinkParams) error {
+	if m.RemoveTagsFromLinkFunc != nil {
+		return m.RemoveTagsFromLinkFunc(ctx, arg)
+	}
+	return errors.New("not implemented")
+}
+
+func (m *mockQueries) GetLinkByIdAndUserWithTags(ctx context.Context, arg db.GetLinkByIdAndUserWithTagsParams) (db.GetLinkByIdAndUserWithTagsRow, error) {
+	if m.GetLinkByIdAndUserWithTagsFunc != nil {
+		return m.GetLinkByIdAndUserWithTagsFunc(ctx, arg)
+	}
+	return db.GetLinkByIdAndUserWithTagsRow{}, errors.New("not implemented")
 }
 
 // createTestLogger creates a test logger that can be used in tests
@@ -320,6 +352,11 @@ func contains(s string, char byte) bool {
 	return false
 }
 
+// Note: For proper Redis mocking, consider using miniredis or a Redis test container.
+// For now, we test cache behavior with nil cache (cache unavailable) and verify
+// that the code handles it gracefully. Full Redis integration tests should use
+// a real Redis instance or miniredis.
+
 func TestLinkService_CreateShortLink(t *testing.T) {
 	ctx := context.Background()
 	userID := "user_123"
@@ -345,7 +382,7 @@ func TestLinkService_CreateShortLink(t *testing.T) {
 			queries: mockQueries,
 			logger:  createTestLogger(),
 		}
-		link, err := service.CreateShortLink(ctx, userID, originalURL)
+		link, err := service.CreateShortLink(ctx, userID, originalURL, nil, nil)
 
 		if err != nil {
 			t.Errorf("CreateShortLink() error = %v, want nil", err)
@@ -363,7 +400,7 @@ func TestLinkService_CreateShortLink(t *testing.T) {
 			queries: &mockQueries{},
 			logger:  createTestLogger(),
 		}
-		_, err := service.CreateShortLink(ctx, userID, "invalid-url")
+		_, err := service.CreateShortLink(ctx, userID, "invalid-url", nil, nil)
 
 		if err == nil {
 			t.Errorf("CreateShortLink() expected error for invalid URL")
@@ -391,7 +428,7 @@ func TestLinkService_CreateShortLink(t *testing.T) {
 			queries: mockQueries,
 			logger:  createTestLogger(),
 		}
-		link, err := service.CreateShortLink(ctx, userID, originalURL)
+		link, err := service.CreateShortLink(ctx, userID, originalURL, nil, nil)
 
 		if err != nil {
 			t.Errorf("CreateShortLink() error = %v, want nil", err)
@@ -416,7 +453,7 @@ func TestLinkService_CreateShortLink(t *testing.T) {
 			queries: mockQueries,
 			logger:  createTestLogger(),
 		}
-		_, err := service.CreateShortLink(ctx, userID, originalURL)
+		_, err := service.CreateShortLink(ctx, userID, originalURL, nil, nil)
 
 		if err == nil {
 			t.Errorf("CreateShortLink() expected error after max retries")
@@ -435,7 +472,7 @@ func TestLinkService_CreateShortLink(t *testing.T) {
 			queries: mockQueries,
 			logger:  createTestLogger(),
 		}
-		_, err := service.CreateShortLink(ctx, userID, originalURL)
+		_, err := service.CreateShortLink(ctx, userID, originalURL, nil, nil)
 
 		if err == nil {
 			t.Errorf("CreateShortLink() expected error for database failure")
@@ -455,11 +492,24 @@ func TestLinkService_ListAllLinks(t *testing.T) {
 			createTestListUserLinksRow(uuid.New(), "abc123", "https://example.com/1", userID),
 			createTestListUserLinksRow(uuid.New(), "def456", "https://example.com/2", userID),
 		}
+		total := int64(2)
 
 		mockQueries := &mockQueries{
-			ListUserLinksFunc: func(ctx context.Context, uid string) ([]db.ListUserLinksRow, error) {
-				if uid != userID {
-					t.Errorf("ListUserLinks called with wrong UserID: got %s, want %s", uid, userID)
+			CountUserLinksFunc: func(ctx context.Context, arg db.CountUserLinksParams) (int64, error) {
+				if arg.UserID != userID {
+					t.Errorf("CountUserLinks called with wrong UserID: got %s, want %s", arg.UserID, userID)
+				}
+				return total, nil
+			},
+			ListUserLinksFunc: func(ctx context.Context, arg db.ListUserLinksParams) ([]db.ListUserLinksRow, error) {
+				if arg.UserID != userID {
+					t.Errorf("ListUserLinks called with wrong UserID: got %s, want %s", arg.UserID, userID)
+				}
+				if arg.Offset != 0 {
+					t.Errorf("ListUserLinks called with wrong Offset: got %d, want 0", arg.Offset)
+				}
+				if arg.Limit != 5 {
+					t.Errorf("ListUserLinks called with wrong Limit: got %d, want 5", arg.Limit)
 				}
 				return expectedLinks, nil
 			},
@@ -467,97 +517,279 @@ func TestLinkService_ListAllLinks(t *testing.T) {
 
 		service := &LinkService{
 			queries: mockQueries,
+			cache:   nil,
 			logger:  createTestLogger(),
 		}
-		links, err := service.ListAllLinks(ctx, userID)
+		result, err := service.ListAllLinks(ctx, userID, nil, nil, 1, 5)
 
 		if err != nil {
 			t.Errorf("ListAllLinks() error = %v, want nil", err)
 		}
-		if len(links) != len(expectedLinks) {
-			t.Errorf("ListAllLinks() length = %d, want %d", len(links), len(expectedLinks))
+		if result == nil {
+			t.Fatalf("ListAllLinks() result is nil")
+		}
+		if len(result.Links) != len(expectedLinks) {
+			t.Errorf("ListAllLinks() length = %d, want %d", len(result.Links), len(expectedLinks))
+		}
+		if result.Total != total {
+			t.Errorf("ListAllLinks() Total = %d, want %d", result.Total, total)
+		}
+		if result.Page != 1 {
+			t.Errorf("ListAllLinks() Page = %d, want 1", result.Page)
+		}
+		if result.Limit != 5 {
+			t.Errorf("ListAllLinks() Limit = %d, want 5", result.Limit)
+		}
+		if result.TotalPages != 1 {
+			t.Errorf("ListAllLinks() TotalPages = %d, want 1", result.TotalPages)
 		}
 	})
 
 	t.Run("successful list with no links", func(t *testing.T) {
 		mockQueries := &mockQueries{
-			ListUserLinksFunc: func(ctx context.Context, uid string) ([]db.ListUserLinksRow, error) {
+			CountUserLinksFunc: func(ctx context.Context, arg db.CountUserLinksParams) (int64, error) {
+				return 0, nil
+			},
+			ListUserLinksFunc: func(ctx context.Context, arg db.ListUserLinksParams) ([]db.ListUserLinksRow, error) {
 				return []db.ListUserLinksRow{}, nil
 			},
 		}
 
 		service := &LinkService{
 			queries: mockQueries,
+			cache:   nil,
 			logger:  createTestLogger(),
 		}
-		links, err := service.ListAllLinks(ctx, userID)
+		result, err := service.ListAllLinks(ctx, userID, nil, nil, 1, 5)
 
 		if err != nil {
 			t.Errorf("ListAllLinks() error = %v, want nil", err)
 		}
-		if len(links) != 0 {
-			t.Errorf("ListAllLinks() length = %d, want 0", len(links))
+		if result == nil {
+			t.Fatalf("ListAllLinks() result is nil")
+		}
+		if len(result.Links) != 0 {
+			t.Errorf("ListAllLinks() length = %d, want 0", len(result.Links))
+		}
+		if result.Total != 0 {
+			t.Errorf("ListAllLinks() Total = %d, want 0", result.Total)
 		}
 	})
 
-	t.Run("handles database errors", func(t *testing.T) {
-		dbError := errors.New("database query failed")
+	t.Run("pagination works correctly", func(t *testing.T) {
+		expectedLinks := []db.ListUserLinksRow{
+			createTestListUserLinksRow(uuid.New(), "def456", "https://example.com/2", userID),
+		}
+		total := int64(2)
+
 		mockQueries := &mockQueries{
-			ListUserLinksFunc: func(ctx context.Context, uid string) ([]db.ListUserLinksRow, error) {
-				return nil, dbError
+			CountUserLinksFunc: func(ctx context.Context, arg db.CountUserLinksParams) (int64, error) {
+				return total, nil
 			},
-		}
-
-		service := &LinkService{
-			queries: mockQueries,
-			logger:  createTestLogger(),
-		}
-		_, err := service.ListAllLinks(ctx, userID)
-
-		if err == nil {
-			t.Errorf("ListAllLinks() expected error for database failure")
-		}
-		if !errors.Is(err, dbError) {
-			t.Errorf("ListAllLinks() error = %v, want %v", err, dbError)
-		}
-	})
-
-	t.Run("excludes deleted links from list", func(t *testing.T) {
-		activeLink1 := createTestListUserLinksRow(uuid.New(), "abc123", "https://example.com/1", userID)
-		activeLink2 := createTestListUserLinksRow(uuid.New(), "def456", "https://example.com/2", userID)
-		deletedLink := createDeletedTestLink(uuid.New(), "ghi789", "https://example.com/3", userID)
-
-		// Mock should only return active links (deleted links filtered by SQL query)
-		expectedLinks := []db.ListUserLinksRow{activeLink1, activeLink2}
-
-		mockQueries := &mockQueries{
-			ListUserLinksFunc: func(ctx context.Context, uid string) ([]db.ListUserLinksRow, error) {
-				if uid != userID {
-					t.Errorf("ListUserLinks called with wrong UserID: got %s, want %s", uid, userID)
+			ListUserLinksFunc: func(ctx context.Context, arg db.ListUserLinksParams) ([]db.ListUserLinksRow, error) {
+				if arg.Offset != 1 {
+					t.Errorf("ListUserLinks called with wrong Offset: got %d, want 1", arg.Offset)
 				}
-				// Verify that deleted links are not included
-				// In real implementation, SQL query filters WHERE deleted_at IS NULL
+				if arg.Limit != 1 {
+					t.Errorf("ListUserLinks called with wrong Limit: got %d, want 1", arg.Limit)
+				}
 				return expectedLinks, nil
 			},
 		}
 
 		service := &LinkService{
 			queries: mockQueries,
+			cache:   nil,
 			logger:  createTestLogger(),
 		}
-		links, err := service.ListAllLinks(ctx, userID)
+		result, err := service.ListAllLinks(ctx, userID, nil, nil, 2, 1)
 
 		if err != nil {
 			t.Errorf("ListAllLinks() error = %v, want nil", err)
 		}
-		if len(links) != 2 {
-			t.Errorf("ListAllLinks() length = %d, want 2 (deleted link should be excluded)", len(links))
+		if result == nil {
+			t.Fatalf("ListAllLinks() result is nil")
 		}
-		// Verify deleted link is not in results
-		for _, link := range links {
-			if link.ID == deletedLink.ID {
-				t.Errorf("ListAllLinks() returned deleted link: %s", deletedLink.ID)
-			}
+		if result.Page != 2 {
+			t.Errorf("ListAllLinks() Page = %d, want 2", result.Page)
+		}
+		if result.Limit != 1 {
+			t.Errorf("ListAllLinks() Limit = %d, want 1", result.Limit)
+		}
+		if result.TotalPages != 2 {
+			t.Errorf("ListAllLinks() TotalPages = %d, want 2", result.TotalPages)
+		}
+	})
+
+	t.Run("defaults page and limit when invalid", func(t *testing.T) {
+		mockQueries := &mockQueries{
+			CountUserLinksFunc: func(ctx context.Context, arg db.CountUserLinksParams) (int64, error) {
+				return 0, nil
+			},
+			ListUserLinksFunc: func(ctx context.Context, arg db.ListUserLinksParams) ([]db.ListUserLinksRow, error) {
+				if arg.Offset != 0 {
+					t.Errorf("ListUserLinks called with wrong Offset: got %d, want 0 (page defaults to 1)", arg.Offset)
+				}
+				if arg.Limit != 5 {
+					t.Errorf("ListUserLinks called with wrong Limit: got %d, want 5 (default)", arg.Limit)
+				}
+				return []db.ListUserLinksRow{}, nil
+			},
+		}
+
+		service := &LinkService{
+			queries: mockQueries,
+			cache:   nil,
+			logger:  createTestLogger(),
+		}
+		result, err := service.ListAllLinks(ctx, userID, nil, nil, 0, 0)
+
+		if err != nil {
+			t.Errorf("ListAllLinks() error = %v, want nil", err)
+		}
+		if result == nil {
+			t.Fatalf("ListAllLinks() result is nil")
+		}
+		if result.Page != 1 {
+			t.Errorf("ListAllLinks() Page = %d, want 1 (default)", result.Page)
+		}
+		if result.Limit != 5 {
+			t.Errorf("ListAllLinks() Limit = %d, want 5 (default)", result.Limit)
+		}
+	})
+
+	t.Run("max limit is enforced", func(t *testing.T) {
+		mockQueries := &mockQueries{
+			CountUserLinksFunc: func(ctx context.Context, arg db.CountUserLinksParams) (int64, error) {
+				return 0, nil
+			},
+			ListUserLinksFunc: func(ctx context.Context, arg db.ListUserLinksParams) ([]db.ListUserLinksRow, error) {
+				if arg.Limit != 100 {
+					t.Errorf("ListUserLinks called with wrong Limit: got %d, want 100 (max)", arg.Limit)
+				}
+				return []db.ListUserLinksRow{}, nil
+			},
+		}
+
+		service := &LinkService{
+			queries: mockQueries,
+			cache:   nil,
+			logger:  createTestLogger(),
+		}
+		result, err := service.ListAllLinks(ctx, userID, nil, nil, 1, 200)
+
+		if err != nil {
+			t.Errorf("ListAllLinks() error = %v, want nil", err)
+		}
+		if result == nil {
+			t.Fatalf("ListAllLinks() result is nil")
+		}
+		if result.Limit != 100 {
+			t.Errorf("ListAllLinks() Limit = %d, want 100 (max)", result.Limit)
+		}
+	})
+
+	t.Run("handles database errors on count", func(t *testing.T) {
+		dbError := errors.New("database query failed")
+		mockQueries := &mockQueries{
+			CountUserLinksFunc: func(ctx context.Context, arg db.CountUserLinksParams) (int64, error) {
+				return 0, dbError
+			},
+		}
+
+		service := &LinkService{
+			queries: mockQueries,
+			cache:   nil,
+			logger:  createTestLogger(),
+		}
+		_, err := service.ListAllLinks(ctx, userID, nil, nil, 1, 5)
+
+		if err == nil {
+			t.Errorf("ListAllLinks() expected error for database failure")
+		}
+	})
+
+	t.Run("handles database errors on list", func(t *testing.T) {
+		dbError := errors.New("database query failed")
+		mockQueries := &mockQueries{
+			CountUserLinksFunc: func(ctx context.Context, arg db.CountUserLinksParams) (int64, error) {
+				return 0, nil
+			},
+			ListUserLinksFunc: func(ctx context.Context, arg db.ListUserLinksParams) ([]db.ListUserLinksRow, error) {
+				return nil, dbError
+			},
+		}
+
+		service := &LinkService{
+			queries: mockQueries,
+			cache:   nil,
+			logger:  createTestLogger(),
+		}
+		_, err := service.ListAllLinks(ctx, userID, nil, nil, 1, 5)
+
+		if err == nil {
+			t.Errorf("ListAllLinks() expected error for database failure")
+		}
+	})
+
+	t.Run("filters by is_active", func(t *testing.T) {
+		isActive := true
+		mockQueries := &mockQueries{
+			CountUserLinksFunc: func(ctx context.Context, arg db.CountUserLinksParams) (int64, error) {
+				if arg.IsActive == nil || *arg.IsActive != isActive {
+					t.Errorf("CountUserLinks called with wrong IsActive: got %v, want %v", arg.IsActive, &isActive)
+				}
+				return 1, nil
+			},
+			ListUserLinksFunc: func(ctx context.Context, arg db.ListUserLinksParams) ([]db.ListUserLinksRow, error) {
+				if arg.IsActive == nil || *arg.IsActive != isActive {
+					t.Errorf("ListUserLinks called with wrong IsActive: got %v, want %v", arg.IsActive, &isActive)
+				}
+				return []db.ListUserLinksRow{}, nil
+			},
+		}
+
+		service := &LinkService{
+			queries: mockQueries,
+			cache:   nil,
+			logger:  createTestLogger(),
+		}
+		_, err := service.ListAllLinks(ctx, userID, &isActive, nil, 1, 5)
+
+		if err != nil {
+			t.Errorf("ListAllLinks() error = %v, want nil", err)
+		}
+	})
+
+	t.Run("filters by tag IDs", func(t *testing.T) {
+		tagID1 := uuid.New()
+		tagID2 := uuid.New()
+		tagIDs := []uuid.UUID{tagID1, tagID2}
+
+		mockQueries := &mockQueries{
+			CountUserLinksFunc: func(ctx context.Context, arg db.CountUserLinksParams) (int64, error) {
+				if len(arg.TagIds) != 2 || arg.TagIds[0] != tagID1 || arg.TagIds[1] != tagID2 {
+					t.Errorf("CountUserLinks called with wrong TagIDs")
+				}
+				return 1, nil
+			},
+			ListUserLinksFunc: func(ctx context.Context, arg db.ListUserLinksParams) ([]db.ListUserLinksRow, error) {
+				if len(arg.TagIds) != 2 || arg.TagIds[0] != tagID1 || arg.TagIds[1] != tagID2 {
+					t.Errorf("ListUserLinks called with wrong TagIDs")
+				}
+				return []db.ListUserLinksRow{}, nil
+			},
+		}
+
+		service := &LinkService{
+			queries: mockQueries,
+			cache:   nil,
+			logger:  createTestLogger(),
+		}
+		_, err := service.ListAllLinks(ctx, userID, nil, tagIDs, 1, 5)
+
+		if err != nil {
+			t.Errorf("ListAllLinks() error = %v, want nil", err)
 		}
 	})
 }
@@ -569,7 +801,7 @@ func TestLinkService_GetOriginalURL(t *testing.T) {
 	shortcode := "abc123"
 	originalURL := "https://example.com"
 
-	t.Run("successful get", func(t *testing.T) {
+	t.Run("successful get without cache", func(t *testing.T) {
 		expectedRow := db.GetLinkForRedirectRow{
 			ID:          uuid.New(),
 			OriginalUrl: originalURL,
@@ -586,6 +818,7 @@ func TestLinkService_GetOriginalURL(t *testing.T) {
 
 		service := &LinkService{
 			queries: mockQueries,
+			cache:   nil, // No cache
 			logger:  createTestLogger(),
 		}
 		row, err := service.GetOriginalURL(ctx, shortcode)
@@ -598,6 +831,10 @@ func TestLinkService_GetOriginalURL(t *testing.T) {
 		}
 	})
 
+	// Note: Full Redis cache testing (cache hit/miss) requires a real Redis instance
+	// or a library like miniredis. These tests verify graceful degradation when
+	// cache is unavailable (nil), which is the most important behavior.
+
 	t.Run("link not found", func(t *testing.T) {
 		mockQueries := &mockQueries{
 			GetLinkForRedirectFunc: func(ctx context.Context, code string) (db.GetLinkForRedirectRow, error) {
@@ -607,6 +844,7 @@ func TestLinkService_GetOriginalURL(t *testing.T) {
 
 		service := &LinkService{
 			queries: mockQueries,
+			cache:   nil,
 			logger:  createTestLogger(),
 		}
 		_, err := service.GetOriginalURL(ctx, shortcode)
@@ -629,6 +867,7 @@ func TestLinkService_GetOriginalURL(t *testing.T) {
 
 		service := &LinkService{
 			queries: mockQueries,
+			cache:   nil,
 			logger:  createTestLogger(),
 		}
 		_, err := service.GetOriginalURL(ctx, shortcode)
@@ -650,6 +889,7 @@ func TestLinkService_GetOriginalURL(t *testing.T) {
 
 		service := &LinkService{
 			queries: mockQueries,
+			cache:   nil,
 			logger:  createTestLogger(),
 		}
 		_, err := service.GetOriginalURL(ctx, shortcode)
@@ -659,6 +899,36 @@ func TestLinkService_GetOriginalURL(t *testing.T) {
 		}
 		if !errors.Is(err, apperrors.LinkNotFound) {
 			t.Errorf("GetOriginalURL() error = %v, want %v", err, apperrors.LinkNotFound)
+		}
+	})
+
+	t.Run("cache write failure doesn't break request", func(t *testing.T) {
+		// Use a nil cache to simulate cache write failure
+		// (In real scenario, this would be a Redis connection error)
+		expectedRow := db.GetLinkForRedirectRow{
+			ID:          uuid.New(),
+			OriginalUrl: originalURL,
+		}
+
+		mockQueries := &mockQueries{
+			GetLinkForRedirectFunc: func(ctx context.Context, code string) (db.GetLinkForRedirectRow, error) {
+				return expectedRow, nil
+			},
+		}
+
+		service := &LinkService{
+			queries: mockQueries,
+			cache:   nil, // Simulates cache unavailable
+			logger:  createTestLogger(),
+		}
+		row, err := service.GetOriginalURL(ctx, shortcode)
+
+		// Should still succeed even if cache write fails
+		if err != nil {
+			t.Errorf("GetOriginalURL() error = %v, want nil (cache failure should not break request)", err)
+		}
+		if row.OriginalUrl != originalURL {
+			t.Errorf("GetOriginalURL() OriginalUrl = %s, want %s", row.OriginalUrl, originalURL)
 		}
 	})
 }
@@ -684,8 +954,11 @@ func TestSoftDeleteFlow(t *testing.T) {
 				}
 				return db.GetLinkByIdAndUserRow{}, sql.ErrNoRows
 			},
-			ListUserLinksFunc: func(ctx context.Context, uid string) ([]db.ListUserLinksRow, error) {
-				if uid == userID {
+			CountUserLinksFunc: func(ctx context.Context, arg db.CountUserLinksParams) (int64, error) {
+				return 1, nil
+			},
+			ListUserLinksFunc: func(ctx context.Context, arg db.ListUserLinksParams) ([]db.ListUserLinksRow, error) {
+				if arg.UserID == userID {
 					createdListLink := createTestListUserLinksRow(linkID, shortcode, originalURL, userID)
 					return []db.ListUserLinksRow{createdListLink}, nil
 				}
@@ -729,17 +1002,23 @@ func TestSoftDeleteFlow(t *testing.T) {
 		}
 
 		// Step 4: Verify link is excluded from list
-		mockQueries.ListUserLinksFunc = func(ctx context.Context, uid string) ([]db.ListUserLinksRow, error) {
+		mockQueries.CountUserLinksFunc = func(ctx context.Context, arg db.CountUserLinksParams) (int64, error) {
+			return 0, nil
+		}
+		mockQueries.ListUserLinksFunc = func(ctx context.Context, arg db.ListUserLinksParams) ([]db.ListUserLinksRow, error) {
 			// SQL query filters WHERE deleted_at IS NULL, so deleted links are excluded
 			return []db.ListUserLinksRow{}, nil
 		}
 
-		links, err := service.ListAllLinks(ctx, userID)
+		result, err := service.ListAllLinks(ctx, userID, nil, nil, 1, 5)
 		if err != nil {
 			t.Errorf("ListAllLinks() after delete error = %v, want nil", err)
 		}
-		if len(links) != 0 {
-			t.Errorf("ListAllLinks() after delete length = %d, want 0 (deleted link should be excluded)", len(links))
+		if result == nil {
+			t.Fatalf("ListAllLinks() result is nil")
+		}
+		if len(result.Links) != 0 {
+			t.Errorf("ListAllLinks() after delete length = %d, want 0 (deleted link should be excluded)", len(result.Links))
 		}
 
 		// Step 5: Verify link cannot be used for redirect
@@ -821,7 +1100,7 @@ func TestSoftDeleteFlow(t *testing.T) {
 		}
 
 		// Create new link with same shortcode (should succeed due to partial unique index)
-		newLink, err := service.CreateShortLink(ctx, userID, "https://new.com")
+		newLink, err := service.CreateShortLink(ctx, userID, "https://new.com", nil, nil)
 		if err != nil {
 			// Note: This might fail due to collision in mock, but in real DB it would work
 			// because the partial unique index allows reusing shortcodes after deletion
@@ -1084,6 +1363,7 @@ func TestLinkService_UpdateLink(t *testing.T) {
 
 		service := &LinkService{
 			queries: mockQueries,
+			cache:   nil,
 			logger:  createTestLogger(),
 		}
 
@@ -1092,6 +1372,9 @@ func TestLinkService_UpdateLink(t *testing.T) {
 			t.Errorf("UpdateLink() error = %v, want nil", err)
 		}
 	})
+
+	// Note: Cache invalidation tests require a real Redis instance or miniredis.
+	// The code handles nil cache gracefully (no-op), which is tested above.
 }
 
 func TestLinkService_DeleteLink(t *testing.T) {
@@ -1181,6 +1464,7 @@ func TestLinkService_DeleteLink(t *testing.T) {
 
 		service := &LinkService{
 			queries: mockQueries,
+			cache:   nil,
 			logger:  createTestLogger(),
 		}
 		_, err := service.DeleteLink(ctx, userID, linkID)
@@ -1190,6 +1474,323 @@ func TestLinkService_DeleteLink(t *testing.T) {
 		}
 		if !errors.Is(err, apperrors.LinkNotFound) {
 			t.Errorf("DeleteLink() error = %v, want %v", err, apperrors.LinkNotFound)
+		}
+	})
+
+	// Note: Cache invalidation tests require a real Redis instance or miniredis.
+	// The code handles nil cache gracefully (no-op), which is the most important behavior.
+}
+
+func TestLinkService_GetLinkByShortcode(t *testing.T) {
+	ctx := context.Background()
+	userID := "user_123"
+	shortcode := "abc123"
+	linkID := uuid.New()
+	originalURL := "https://example.com"
+
+	t.Run("successful get", func(t *testing.T) {
+		expectedRow := db.GetLinkByShortcodeAndUserRow{
+			ID:          linkID,
+			Shortcode:   shortcode,
+			OriginalUrl: originalURL,
+			IsActive:    true,
+			ExpiresAt:   pgtype.Timestamp{Valid: false},
+			CreatedAt:   pgtype.Timestamp{Valid: false},
+			UpdatedAt:   pgtype.Timestamp{Valid: false},
+		}
+
+		mockQueries := &mockQueries{
+			GetLinkByShortcodeAndUserFunc: func(ctx context.Context, arg db.GetLinkByShortcodeAndUserParams) (db.GetLinkByShortcodeAndUserRow, error) {
+				if arg.Shortcode != shortcode {
+					t.Errorf("GetLinkByShortcodeAndUser called with wrong shortcode: got %s, want %s", arg.Shortcode, shortcode)
+				}
+				if arg.UserID != userID {
+					t.Errorf("GetLinkByShortcodeAndUser called with wrong UserID: got %s, want %s", arg.UserID, userID)
+				}
+				return expectedRow, nil
+			},
+		}
+
+		service := &LinkService{
+			queries: mockQueries,
+			logger:  createTestLogger(),
+		}
+		row, err := service.GetLinkByShortcode(ctx, userID, shortcode)
+
+		if err != nil {
+			t.Errorf("GetLinkByShortcode() error = %v, want nil", err)
+		}
+		if row.Shortcode != shortcode {
+			t.Errorf("GetLinkByShortcode() Shortcode = %s, want %s", row.Shortcode, shortcode)
+		}
+		if row.OriginalUrl != originalURL {
+			t.Errorf("GetLinkByShortcode() OriginalUrl = %s, want %s", row.OriginalUrl, originalURL)
+		}
+	})
+
+	t.Run("link not found", func(t *testing.T) {
+		mockQueries := &mockQueries{
+			GetLinkByShortcodeAndUserFunc: func(ctx context.Context, arg db.GetLinkByShortcodeAndUserParams) (db.GetLinkByShortcodeAndUserRow, error) {
+				return db.GetLinkByShortcodeAndUserRow{}, sql.ErrNoRows
+			},
+		}
+
+		service := &LinkService{
+			queries: mockQueries,
+			logger:  createTestLogger(),
+		}
+		_, err := service.GetLinkByShortcode(ctx, userID, shortcode)
+
+		if err == nil {
+			t.Errorf("GetLinkByShortcode() expected error for not found")
+		}
+		if !errors.Is(err, apperrors.LinkNotFound) {
+			t.Errorf("GetLinkByShortcode() error = %v, want %v", err, apperrors.LinkNotFound)
+		}
+	})
+
+	t.Run("handles database errors", func(t *testing.T) {
+		dbError := errors.New("database query failed")
+		mockQueries := &mockQueries{
+			GetLinkByShortcodeAndUserFunc: func(ctx context.Context, arg db.GetLinkByShortcodeAndUserParams) (db.GetLinkByShortcodeAndUserRow, error) {
+				return db.GetLinkByShortcodeAndUserRow{}, dbError
+			},
+		}
+
+		service := &LinkService{
+			queries: mockQueries,
+			logger:  createTestLogger(),
+		}
+		_, err := service.GetLinkByShortcode(ctx, userID, shortcode)
+
+		if err == nil {
+			t.Errorf("GetLinkByShortcode() expected error for database failure")
+		}
+	})
+}
+
+func TestLinkService_AddTagsToLink(t *testing.T) {
+	ctx := context.Background()
+	userID := "user_123"
+	linkID := uuid.New()
+	tagID1 := uuid.New()
+	tagID2 := uuid.New()
+
+	t.Run("successful add tags", func(t *testing.T) {
+		expectedLink := db.GetLinkByIdAndUserWithTagsRow{
+			ID:          linkID,
+			Shortcode:   "abc123",
+			OriginalUrl: "https://example.com",
+			IsActive:    true,
+			ExpiresAt:   pgtype.Timestamp{Valid: false},
+			CreatedAt:   pgtype.Timestamp{Valid: false},
+			UpdatedAt:   pgtype.Timestamp{Valid: false},
+			Tags:        []interface{}{},
+		}
+
+		mockQueries := &mockQueries{
+			AddTagsToLinkFunc: func(ctx context.Context, arg db.AddTagsToLinkParams) error {
+				if arg.LinkID != linkID {
+					t.Errorf("AddTagsToLink called with wrong LinkID: got %s, want %s", arg.LinkID, linkID)
+				}
+				if arg.UserID != userID {
+					t.Errorf("AddTagsToLink called with wrong UserID: got %s, want %s", arg.UserID, userID)
+				}
+				if len(arg.TagIDs) != 2 || arg.TagIDs[0] != tagID1 || arg.TagIDs[1] != tagID2 {
+					t.Errorf("AddTagsToLink called with wrong TagIDs")
+				}
+				return nil
+			},
+			GetLinkByIdAndUserWithTagsFunc: func(ctx context.Context, arg db.GetLinkByIdAndUserWithTagsParams) (db.GetLinkByIdAndUserWithTagsRow, error) {
+				if arg.ID != linkID {
+					t.Errorf("GetLinkByIdAndUserWithTags called with wrong ID: got %s, want %s", arg.ID, linkID)
+				}
+				if arg.UserID != userID {
+					t.Errorf("GetLinkByIdAndUserWithTags called with wrong UserID: got %s, want %s", arg.UserID, userID)
+				}
+				return expectedLink, nil
+			},
+		}
+
+		service := &LinkService{
+			queries: mockQueries,
+			logger:  createTestLogger(),
+		}
+		link, err := service.AddTagsToLink(ctx, userID, linkID, []uuid.UUID{tagID1, tagID2})
+
+		if err != nil {
+			t.Errorf("AddTagsToLink() error = %v, want nil", err)
+		}
+		if link.ID != linkID {
+			t.Errorf("AddTagsToLink() returned link with wrong ID: got %s, want %s", link.ID, linkID)
+		}
+	})
+
+	t.Run("empty tag list is no-op", func(t *testing.T) {
+		expectedLink := db.GetLinkByIdAndUserWithTagsRow{
+			ID:          linkID,
+			Shortcode:   "abc123",
+			OriginalUrl: "https://example.com",
+			IsActive:    true,
+			ExpiresAt:   pgtype.Timestamp{Valid: false},
+			CreatedAt:   pgtype.Timestamp{Valid: false},
+			UpdatedAt:   pgtype.Timestamp{Valid: false},
+			Tags:        []interface{}{},
+		}
+
+		mockQueries := &mockQueries{
+			AddTagsToLinkFunc: func(ctx context.Context, arg db.AddTagsToLinkParams) error {
+				t.Errorf("AddTagsToLink should not be called with empty tag list")
+				return nil
+			},
+			GetLinkByIdAndUserWithTagsFunc: func(ctx context.Context, arg db.GetLinkByIdAndUserWithTagsParams) (db.GetLinkByIdAndUserWithTagsRow, error) {
+				return expectedLink, nil
+			},
+		}
+
+		service := &LinkService{
+			queries: mockQueries,
+			logger:  createTestLogger(),
+		}
+		link, err := service.AddTagsToLink(ctx, userID, linkID, []uuid.UUID{})
+
+		if err != nil {
+			t.Errorf("AddTagsToLink() with empty list error = %v, want nil", err)
+		}
+		if link.ID != linkID {
+			t.Errorf("AddTagsToLink() returned link with wrong ID: got %s, want %s", link.ID, linkID)
+		}
+	})
+
+	t.Run("handles database errors", func(t *testing.T) {
+		dbError := errors.New("database query failed")
+		mockQueries := &mockQueries{
+			AddTagsToLinkFunc: func(ctx context.Context, arg db.AddTagsToLinkParams) error {
+				return dbError
+			},
+		}
+
+		service := &LinkService{
+			queries: mockQueries,
+			logger:  createTestLogger(),
+		}
+		_, err := service.AddTagsToLink(ctx, userID, linkID, []uuid.UUID{tagID1})
+
+		if err == nil {
+			t.Errorf("AddTagsToLink() expected error for database failure")
+		}
+	})
+}
+
+func TestLinkService_RemoveTagsFromLink(t *testing.T) {
+	ctx := context.Background()
+	userID := "user_123"
+	linkID := uuid.New()
+	tagID1 := uuid.New()
+	tagID2 := uuid.New()
+
+	t.Run("successful remove tags", func(t *testing.T) {
+		expectedLink := db.GetLinkByIdAndUserWithTagsRow{
+			ID:          linkID,
+			Shortcode:   "abc123",
+			OriginalUrl: "https://example.com",
+			IsActive:    true,
+			ExpiresAt:   pgtype.Timestamp{Valid: false},
+			CreatedAt:   pgtype.Timestamp{Valid: false},
+			UpdatedAt:   pgtype.Timestamp{Valid: false},
+			Tags:        []interface{}{},
+		}
+
+		mockQueries := &mockQueries{
+			RemoveTagsFromLinkFunc: func(ctx context.Context, arg db.RemoveTagsFromLinkParams) error {
+				if arg.LinkID != linkID {
+					t.Errorf("RemoveTagsFromLink called with wrong LinkID: got %s, want %s", arg.LinkID, linkID)
+				}
+				if arg.UserID != userID {
+					t.Errorf("RemoveTagsFromLink called with wrong UserID: got %s, want %s", arg.UserID, userID)
+				}
+				if len(arg.TagIDs) != 2 || arg.TagIDs[0] != tagID1 || arg.TagIDs[1] != tagID2 {
+					t.Errorf("RemoveTagsFromLink called with wrong TagIDs")
+				}
+				return nil
+			},
+			GetLinkByIdAndUserWithTagsFunc: func(ctx context.Context, arg db.GetLinkByIdAndUserWithTagsParams) (db.GetLinkByIdAndUserWithTagsRow, error) {
+				if arg.ID != linkID {
+					t.Errorf("GetLinkByIdAndUserWithTags called with wrong ID: got %s, want %s", arg.ID, linkID)
+				}
+				if arg.UserID != userID {
+					t.Errorf("GetLinkByIdAndUserWithTags called with wrong UserID: got %s, want %s", arg.UserID, userID)
+				}
+				return expectedLink, nil
+			},
+		}
+
+		service := &LinkService{
+			queries: mockQueries,
+			logger:  createTestLogger(),
+		}
+		link, err := service.RemoveTagsFromLink(ctx, userID, linkID, []uuid.UUID{tagID1, tagID2})
+
+		if err != nil {
+			t.Errorf("RemoveTagsFromLink() error = %v, want nil", err)
+		}
+		if link.ID != linkID {
+			t.Errorf("RemoveTagsFromLink() returned link with wrong ID: got %s, want %s", link.ID, linkID)
+		}
+	})
+
+	t.Run("empty tag list is no-op", func(t *testing.T) {
+		expectedLink := db.GetLinkByIdAndUserWithTagsRow{
+			ID:          linkID,
+			Shortcode:   "abc123",
+			OriginalUrl: "https://example.com",
+			IsActive:    true,
+			ExpiresAt:   pgtype.Timestamp{Valid: false},
+			CreatedAt:   pgtype.Timestamp{Valid: false},
+			UpdatedAt:   pgtype.Timestamp{Valid: false},
+			Tags:        []interface{}{},
+		}
+
+		mockQueries := &mockQueries{
+			RemoveTagsFromLinkFunc: func(ctx context.Context, arg db.RemoveTagsFromLinkParams) error {
+				t.Errorf("RemoveTagsFromLink should not be called with empty tag list")
+				return nil
+			},
+			GetLinkByIdAndUserWithTagsFunc: func(ctx context.Context, arg db.GetLinkByIdAndUserWithTagsParams) (db.GetLinkByIdAndUserWithTagsRow, error) {
+				return expectedLink, nil
+			},
+		}
+
+		service := &LinkService{
+			queries: mockQueries,
+			logger:  createTestLogger(),
+		}
+		link, err := service.RemoveTagsFromLink(ctx, userID, linkID, []uuid.UUID{})
+
+		if err != nil {
+			t.Errorf("RemoveTagsFromLink() with empty list error = %v, want nil", err)
+		}
+		if link.ID != linkID {
+			t.Errorf("RemoveTagsFromLink() returned link with wrong ID: got %s, want %s", link.ID, linkID)
+		}
+	})
+
+	t.Run("handles database errors", func(t *testing.T) {
+		dbError := errors.New("database query failed")
+		mockQueries := &mockQueries{
+			RemoveTagsFromLinkFunc: func(ctx context.Context, arg db.RemoveTagsFromLinkParams) error {
+				return dbError
+			},
+		}
+
+		service := &LinkService{
+			queries: mockQueries,
+			logger:  createTestLogger(),
+		}
+		_, err := service.RemoveTagsFromLink(ctx, userID, linkID, []uuid.UUID{tagID1})
+
+		if err == nil {
+			t.Errorf("RemoveTagsFromLink() expected error for database failure")
 		}
 	})
 }

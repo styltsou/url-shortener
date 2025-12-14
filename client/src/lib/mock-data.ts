@@ -1,4 +1,5 @@
 import type { Url, AnalyticsData, Tag } from "@/types/url";
+import { DATE_FORMAT_OPTIONS, DATETIME_FORMAT_OPTIONS } from "./constants";
 
 // Common referrer sources for mock data
 const REFERRER_SOURCES = [
@@ -233,9 +234,77 @@ export const generateShortCode = () =>
 
 export const formatDate = (date: Date | null) => {
 	if (!date) return null;
-	return new Date(date).toLocaleDateString("en-US", {
-		month: "short",
-		day: "numeric",
-		year: "numeric",
-	});
+	return new Date(date).toLocaleDateString("en-US", DATE_FORMAT_OPTIONS);
+};
+
+export const formatDateTime = (date: Date | string | null) => {
+	if (!date) return null;
+	const d = new Date(date);
+	return d.toLocaleString("en-US", DATETIME_FORMAT_OPTIONS);
+};
+
+/**
+ * Get a human-readable relative time period (e.g., "2 hours", "3 days")
+ * @param date - The date to compare
+ * @param referenceDate - Optional reference date (defaults to now)
+ * @returns A string like "2 hours", "3 days", "in 2 hours", or "2 hours ago"
+ */
+export const getTimePeriod = (
+	date: Date | string,
+	referenceDate: Date = new Date()
+): string => {
+	const targetDate = new Date(date);
+	const now = new Date(referenceDate);
+	const diffMs = targetDate.getTime() - now.getTime();
+	const diffSeconds = Math.floor(Math.abs(diffMs) / 1000);
+	const isPast = diffMs < 0;
+
+	// Less than a minute
+	if (diffSeconds < 60) {
+		return isPast ? "just now" : "in a moment";
+	}
+
+	// Minutes
+	const diffMinutes = Math.floor(diffSeconds / 60);
+	if (diffMinutes < 60) {
+		const period = diffMinutes === 1 ? "minute" : "minutes";
+		return isPast
+			? `${diffMinutes} ${period} ago`
+			: `in ${diffMinutes} ${period}`;
+	}
+
+	// Hours
+	const diffHours = Math.floor(diffSeconds / 3600);
+	if (diffHours < 24) {
+		const period = diffHours === 1 ? "hour" : "hours";
+		return isPast ? `${diffHours} ${period} ago` : `in ${diffHours} ${period}`;
+	}
+
+	// Days
+	const diffDays = Math.floor(diffSeconds / 86400);
+	if (diffDays < 7) {
+		const period = diffDays === 1 ? "day" : "days";
+		return isPast ? `${diffDays} ${period} ago` : `in ${diffDays} ${period}`;
+	}
+
+	// Weeks
+	const diffWeeks = Math.floor(diffDays / 7);
+	if (diffWeeks < 4) {
+		const period = diffWeeks === 1 ? "week" : "weeks";
+		return isPast ? `${diffWeeks} ${period} ago` : `in ${diffWeeks} ${period}`;
+	}
+
+	// Months
+	const diffMonths = Math.floor(diffDays / 30);
+	if (diffMonths < 12) {
+		const period = diffMonths === 1 ? "month" : "months";
+		return isPast
+			? `${diffMonths} ${period} ago`
+			: `in ${diffMonths} ${period}`;
+	}
+
+	// Years
+	const diffYears = Math.floor(diffDays / 365);
+	const period = diffYears === 1 ? "year" : "years";
+	return isPast ? `${diffYears} ${period} ago` : `in ${diffYears} ${period}`;
 };

@@ -3,6 +3,8 @@ package dto
 import (
 	"errors"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 // For custom validation logic, implement the Validator interface
@@ -30,4 +32,12 @@ func (dto UpdateLink) Validate() error {
 	}
 
 	return nil
+}
+
+type AddTagsToLink struct {
+	TagIDs []uuid.UUID `json:"tag_ids" validate:"required,min=1"`
+}
+
+type RemoveTagsFromLink struct {
+	TagIDs []uuid.UUID `json:"tag_ids" validate:"required,min=1"`
 }

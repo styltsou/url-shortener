@@ -1,7 +1,4 @@
-import { useAuth } from "@clerk/clerk-react";
-
-const API_BASE_URL =
-	import.meta.env.VITE_API_BASE_URL || "http://localhost:8080";
+import { getApiBaseUrl } from "./env";
 
 export interface ApiSuccessResponse<T> {
 	data: T;
@@ -9,27 +6,34 @@ export interface ApiSuccessResponse<T> {
 
 export interface ApiErrorResponse {
 	error: {
-		code: string;
-		message: string;
+		code?: string;
+		message?: string;
+		detail?: string;
 	};
 }
 
 export type ApiResponse<T> = ApiSuccessResponse<T> | ApiErrorResponse;
 
-// Helper to get auth token from Clerk
-export async function getAuthToken(): Promise<string | null> {
-	// This will be called from React components where useAuth is available
-	// For now, we'll pass the token directly
-	return null;
+/**
+ * Custom error class for API errors
+ */
+export class ApiError extends Error {
+	constructor(public status: number, public code?: string, message?: string) {
+		super(message || `HTTP error! status: ${status}`);
+		this.name = "ApiError";
+	}
 }
 
-// Base fetch wrapper with auth
+/**
+ * Base fetch wrapper with auth
+ */
 async function apiFetch<T>(
 	endpoint: string,
 	options: RequestInit = {},
 	token: string | null
 ): Promise<ApiSuccessResponse<T>> {
-	const url = `${API_BASE_URL}${endpoint}`;
+	const baseUrl = getApiBaseUrl();
+	const url = `${baseUrl}${endpoint}`;
 
 	const headers: HeadersInit = {
 		"Content-Type": "application/json",
@@ -46,15 +50,33 @@ async function apiFetch<T>(
 	});
 
 	if (!response.ok) {
-		const error: ApiErrorResponse = await response.json();
-		throw new Error(
-			error.error?.message || `HTTP error! status: ${response.status}`
-		);
+		let errorMessage = `HTTP error! status: ${response.status}`;
+		let errorCode: string | undefined;
+
+		try {
+			const error: ApiErrorResponse = await response.json();
+			errorMessage =
+				error.error?.detail || error.error?.message || errorMessage;
+			errorCode = error.error?.code;
+		} catch {
+			// If response is not JSON, use default error message
+		}
+
+		throw new ApiError(response.status, errorCode, errorMessage);
+	}
+
+	// Handle 204 No Content responses
+	if (response.status === 204) {
+		return {} as ApiSuccessResponse<T>;
 	}
 
 	return response.json();
 }
 
+/**
+ * API client for making authenticated requests
+ * All methods require a token to be passed
+ */
 export const apiClient = {
 	async get<T>(
 		endpoint: string,

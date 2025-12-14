@@ -12,6 +12,52 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countUserLinks = `-- name: CountUserLinks :one
+SELECT COUNT(DISTINCT l.id) as total
+FROM links l
+WHERE l.user_id = $1 
+  AND l.deleted_at IS NULL
+  AND (
+    -- If is_active filter is NULL, show all links
+    $2::boolean IS NULL
+    OR (
+      -- Active filter: is_active = true AND (no expiration OR not expired)
+      $2::boolean = true
+      AND COALESCE(l.is_active, true) = true
+      AND (l.expires_at IS NULL OR l.expires_at > NOW())
+    )
+    OR (
+      -- Inactive filter: is_active = false OR expired
+      $2::boolean = false
+      AND (
+        COALESCE(l.is_active, true) = false
+        OR (l.expires_at IS NOT NULL AND l.expires_at <= NOW())
+      )
+    )
+  )
+  AND (
+    $3::uuid[] IS NULL 
+    OR l.id IN (
+      SELECT DISTINCT lt.link_id
+      FROM link_tags lt
+      WHERE lt.tag_id = ANY($3::uuid[])
+    )
+  )
+`
+
+type CountUserLinksParams struct {
+	UserID   string      `json:"user_id"`
+	IsActive *bool       `json:"is_active"`
+	TagIds   []uuid.UUID `json:"tag_ids"`
+}
+
+func (q *Queries) CountUserLinks(ctx context.Context, arg CountUserLinksParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countUserLinks, arg.UserID, arg.IsActive, arg.TagIds)
+	var total int64
+	err := row.Scan(&total)
+	return total, err
+}
+
 const deleteLink = `-- name: DeleteLink :one
 UPDATE links
 SET deleted_at = NOW(), updated_at = NOW()
@@ -82,6 +128,66 @@ func (q *Queries) GetLinkByIdAndUser(ctx context.Context, arg GetLinkByIdAndUser
 		&i.IsActive,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getLinkByIdAndUserWithTags = `-- name: GetLinkByIdAndUserWithTags :one
+SELECT 
+    l.id,
+    l.shortcode,
+    l.original_url,
+    l.expires_at,
+    l.is_active,
+    l.created_at,
+    l.updated_at,
+    COALESCE(
+        json_agg(
+            json_build_object(
+                'id', t.id,
+                'name', t.name,
+                'created_at', t.created_at
+            )
+        ) FILTER (WHERE t.id IS NOT NULL),
+        '[]'::json
+    ) as tags
+FROM links l
+LEFT JOIN link_tags lt ON l.id = lt.link_id
+LEFT JOIN tags t ON lt.tag_id = t.id
+WHERE l.id = $1 
+  AND l.user_id = $2 
+  AND l.deleted_at IS NULL
+GROUP BY l.id
+`
+
+type GetLinkByIdAndUserWithTagsParams struct {
+	ID     uuid.UUID `json:"id"`
+	UserID string    `json:"user_id"`
+}
+
+type GetLinkByIdAndUserWithTagsRow struct {
+	ID          uuid.UUID        `json:"id"`
+	Shortcode   string           `json:"shortcode"`
+	OriginalUrl string           `json:"original_url"`
+	ExpiresAt   pgtype.Timestamp `json:"expires_at"`
+	IsActive    bool             `json:"is_active"`
+	CreatedAt   pgtype.Timestamp `json:"created_at"`
+	UpdatedAt   pgtype.Timestamp `json:"updated_at"`
+	Tags        interface{}      `json:"tags"`
+}
+
+func (q *Queries) GetLinkByIdAndUserWithTags(ctx context.Context, arg GetLinkByIdAndUserWithTagsParams) (GetLinkByIdAndUserWithTagsRow, error) {
+	row := q.db.QueryRow(ctx, getLinkByIdAndUserWithTags, arg.ID, arg.UserID)
+	var i GetLinkByIdAndUserWithTagsRow
+	err := row.Scan(
+		&i.ID,
+		&i.Shortcode,
+		&i.OriginalUrl,
+		&i.ExpiresAt,
+		&i.IsActive,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Tags,
 	)
 	return i, err
 }
@@ -192,9 +298,40 @@ LEFT JOIN link_tags lt ON l.id = lt.link_id
 LEFT JOIN tags t ON lt.tag_id = t.id
 WHERE l.user_id = $1 
   AND l.deleted_at IS NULL
+  AND (
+    -- If is_active filter is NULL, show all links
+    $2::boolean IS NULL
+    OR (
+      -- Active filter: is_active = true AND (no expiration OR not expired)
+      $2::boolean = true
+      AND COALESCE(l.is_active, true) = true
+      AND (l.expires_at IS NULL OR l.expires_at > NOW())
+    )
+    OR (
+      -- Inactive filter: is_active = false OR expired
+      $2::boolean = false
+      AND (
+        COALESCE(l.is_active, true) = false
+        OR (l.expires_at IS NOT NULL AND l.expires_at <= NOW())
+      )
+    )
+  )
 GROUP BY l.id
+HAVING (
+    $3::uuid[] IS NULL 
+    OR COUNT(CASE WHEN t.id = ANY($3::uuid[]) THEN 1 END) > 0
+)
 ORDER BY l.created_at DESC
+LIMIT $5 OFFSET $4
 `
+
+type ListUserLinksParams struct {
+	UserID   string      `json:"user_id"`
+	IsActive *bool       `json:"is_active"`
+	TagIds   []uuid.UUID `json:"tag_ids"`
+	Offset   int32       `json:"offset"`
+	Limit    int32       `json:"limit"`
+}
 
 type ListUserLinksRow struct {
 	ID          uuid.UUID        `json:"id"`
@@ -207,8 +344,14 @@ type ListUserLinksRow struct {
 	Tags        interface{}      `json:"tags"`
 }
 
-func (q *Queries) ListUserLinks(ctx context.Context, userID string) ([]ListUserLinksRow, error) {
-	rows, err := q.db.Query(ctx, listUserLinks, userID)
+func (q *Queries) ListUserLinks(ctx context.Context, arg ListUserLinksParams) ([]ListUserLinksRow, error) {
+	rows, err := q.db.Query(ctx, listUserLinks,
+		arg.UserID,
+		arg.IsActive,
+		arg.TagIds,
+		arg.Offset,
+		arg.Limit,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -237,8 +380,8 @@ func (q *Queries) ListUserLinks(ctx context.Context, userID string) ([]ListUserL
 }
 
 const tryCreateLink = `-- name: TryCreateLink :one
-INSERT INTO links (shortcode, original_url, user_id)
-SELECT $1::VARCHAR(20), $2::TEXT, $3::TEXT
+INSERT INTO links (shortcode, original_url, user_id, expires_at)
+SELECT $1::VARCHAR(20), $2::TEXT, $3::TEXT, $4
 WHERE NOT EXISTS (
     SELECT 1 FROM links 
     WHERE shortcode = $1::VARCHAR(20) AND deleted_at IS NULL
@@ -247,9 +390,10 @@ RETURNING id, shortcode, original_url, expires_at, is_active, created_at, update
 `
 
 type TryCreateLinkParams struct {
-	Shortcode   string `json:"shortcode"`
-	OriginalUrl string `json:"original_url"`
-	UserID      string `json:"user_id"`
+	Shortcode   string           `json:"shortcode"`
+	OriginalUrl string           `json:"original_url"`
+	UserID      string           `json:"user_id"`
+	ExpiresAt   pgtype.Timestamp `json:"expires_at"`
 }
 
 type TryCreateLinkRow struct {
@@ -262,9 +406,14 @@ type TryCreateLinkRow struct {
 	UpdatedAt   pgtype.Timestamp `json:"updated_at"`
 }
 
-// sqlc.arg(shortcode) sqlc.arg(original_url) sqlc.arg(user_id)
+// sqlc.arg(shortcode) sqlc.arg(original_url) sqlc.arg(user_id) sqlc.narg(expires_at)
 func (q *Queries) TryCreateLink(ctx context.Context, arg TryCreateLinkParams) (TryCreateLinkRow, error) {
-	row := q.db.QueryRow(ctx, tryCreateLink, arg.Shortcode, arg.OriginalUrl, arg.UserID)
+	row := q.db.QueryRow(ctx, tryCreateLink,
+		arg.Shortcode,
+		arg.OriginalUrl,
+		arg.UserID,
+		arg.ExpiresAt,
+	)
 	var i TryCreateLinkRow
 	err := row.Scan(
 		&i.ID,

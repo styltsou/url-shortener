@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"errors"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -15,22 +17,26 @@ import (
 	apperrors "github.com/styltsou/url-shortener/server/pkg/errors"
 	"github.com/styltsou/url-shortener/server/pkg/logger"
 	mw "github.com/styltsou/url-shortener/server/pkg/middleware"
+	"github.com/styltsou/url-shortener/server/pkg/service"
 	"go.uber.org/zap"
 )
 
-// TODO: Generally walk through every implemented handler and make sure
-// they follow our newly established patterns
-// Also make use of the logger interface as params for logger
-// It generally needs refactory especially when it comes to logging and error handling
+// All handlers follow established patterns:
+// - Use handleError() for consistent error logging and HTTP response mapping
+// - Log errors with appropriate levels (Warn for client errors, Error for server errors)
+// - Include context (method, path, user_id, etc.) in log entries
+// - Use structured logging with zap fields
 
 // LinkServiceInterface defines the service methods needed by LinkHandler
 type LinkService interface {
 	GetOriginalURL(ctx context.Context, code string) (db.GetLinkForRedirectRow, error)
-	CreateShortLink(ctx context.Context, userID string, originalURL string) (db.TryCreateLinkRow, error)
-	ListAllLinks(ctx context.Context, userID string) ([]db.ListUserLinksRow, error)
+	CreateShortLink(ctx context.Context, userID string, originalURL string, customShortcode *string, expiresAt *time.Time) (db.TryCreateLinkRow, error)
+	ListAllLinks(ctx context.Context, userID string, isActive *bool, tagIDs []uuid.UUID, page, limit int) (*service.ListLinksResult, error)
 	GetLinkByShortcode(ctx context.Context, userID string, shortcode string) (db.GetLinkByShortcodeAndUserRow, error)
 	UpdateLink(ctx context.Context, userID string, id uuid.UUID, shortcode *string, isActive *bool, expiresAt *time.Time) (db.UpdateLinkRow, error)
 	DeleteLink(ctx context.Context, userID string, id uuid.UUID) (db.DeleteLinkRow, error)
+	AddTagsToLink(ctx context.Context, userID string, linkID uuid.UUID, tagIDs []uuid.UUID) (db.GetLinkByIdAndUserWithTagsRow, error)
+	RemoveTagsFromLink(ctx context.Context, userID string, linkID uuid.UUID, tagIDs []uuid.UUID) (db.GetLinkByIdAndUserWithTagsRow, error)
 }
 
 type LinkHandler struct {
@@ -51,7 +57,13 @@ func (h *LinkHandler) Redirect(w http.ResponseWriter, r *http.Request) {
 
 	link, err := h.LinkService.GetOriginalURL(r.Context(), shortcode)
 	if err != nil {
-		// TODO: Log error
+		h.logger.Warn("Link not found for redirect",
+			zap.Error(err),
+			zap.String("shortcode", shortcode),
+			zap.String("method", r.Method),
+			zap.String("path", r.URL.Path),
+			zap.String("remote_addr", r.RemoteAddr),
+		)
 		render.Status(r, http.StatusNotFound)
 		render.HTML(w, r, `<!DOCTYPE html>
 <html>
@@ -72,7 +84,13 @@ func (h *LinkHandler) CreateLink(w http.ResponseWriter, r *http.Request) {
 	reqBody := mw.GetRequestBodyFromContext[dto.CreateLink](r.Context())
 	userID := mw.GetUserIDFromContext(r.Context())
 
-	createdLink, err := h.LinkService.CreateShortLink(r.Context(), userID, reqBody.URL)
+	createdLink, err := h.LinkService.CreateShortLink(
+		r.Context(),
+		userID,
+		reqBody.URL,
+		reqBody.Shortcode,
+		reqBody.ExpiresAt,
+	)
 	if err != nil {
 		h.handleError(w, r, err)
 		return
@@ -91,45 +109,92 @@ func (h *LinkHandler) CreateLink(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// List links: GET /api/v1/links
+// List links: GET /api/v1/links?tags=id1,id2&status=active|inactive|all
 func (h *LinkHandler) ListLinks(w http.ResponseWriter, r *http.Request) {
 	userID := mw.GetUserIDFromContext(r.Context())
 
-	// TODO: Is this redundant in production?
+	// Parse query parameters
+	var isActive *bool
+	var tagIDs []uuid.UUID
+
+	// Parse status filter: ?status=active|inactive|all
+	status := r.URL.Query().Get("status")
+	if status != "" && status != "all" {
+		switch status {
+		case "active":
+			val := true
+			isActive = &val
+		case "inactive":
+			val := false
+			isActive = &val
+		}
+	}
+
+	// Parse tag IDs: ?tags=id1,id2,id3
+	tagsParam := r.URL.Query().Get("tags")
+	if tagsParam != "" {
+		tagStrs := strings.Split(tagsParam, ",")
+		for _, tagStr := range tagStrs {
+			tagStr = strings.TrimSpace(tagStr)
+			if tagStr == "" {
+				continue
+			}
+			tagID, err := uuid.Parse(tagStr)
+			if err != nil {
+				h.logger.Warn("Invalid tag ID in query parameter",
+					zap.String("tag_id", tagStr),
+					zap.Error(err),
+				)
+				continue
+			}
+			tagIDs = append(tagIDs, tagID)
+		}
+	}
+
+	// Parse pagination parameters: ?page=1&limit=5
+	page := 1
+	limit := 5
+	if pageStr := r.URL.Query().Get("page"); pageStr != "" {
+		if p, err := strconv.Atoi(pageStr); err == nil && p > 0 {
+			page = p
+		}
+	}
+	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
+		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 {
+			limit = l
+		}
+	}
+
 	h.logger.Info("Listing user links",
 		zap.String("user_id", userID),
 		zap.String("method", r.Method),
 		zap.String("path", r.URL.Path),
+		zap.Any("is_active", isActive),
+		zap.Any("tag_ids", tagIDs),
+		zap.Int("page", page),
+		zap.Int("limit", limit),
 	)
 
-	links, err := h.LinkService.ListAllLinks(r.Context(), userID)
+	result, err := h.LinkService.ListAllLinks(r.Context(), userID, isActive, tagIDs, page, limit)
 	if err != nil {
 		h.handleError(w, r, err)
 		return
 	}
 
 	// Ensure we always return an empty array (not null) when there are no links
-	if links == nil {
-		links = []db.ListUserLinksRow{}
+	if result.Links == nil {
+		result.Links = []db.ListUserLinksRow{}
 	}
-
-	// TODO: I think that maybe this is too redundant.
-	// // Empty slice is a valid response - user simply has no links yet
-	// // This is not an error condition
-	// if len(links) == 0 {
-	// 	h.logger.Info("User has no links",
-	// 		zap.String("user_id", userID),
-	// 	)
-	// } else {
-	// 	h.logger.Info("User links retrieved successfully",
-	// 		zap.String("user_id", userID),
-	// 		zap.Int("link_count", len(links)),
-	// 	)
-	// }
 
 	render.Status(r, http.StatusOK)
 	render.JSON(w, r, &dto.SuccessResponse[[]db.ListUserLinksRow]{
-		Data: links,
+		Data: result.Links,
+		Pagination: &dto.PaginationMeta{
+			Page:       result.Page,
+			Limit:      result.Limit,
+			Total:      result.Total,
+			TotalPages: result.TotalPages,
+		},
 	})
 }
 
@@ -186,7 +251,7 @@ func (h *LinkHandler) UpdateLink(w http.ResponseWriter, r *http.Request) {
 	)
 
 	if err != nil {
-		// TODO: Logging and also check if handler handles all types of possible errors
+		// handleError logs the error and maps it to appropriate HTTP response
 		h.handleError(w, r, err)
 		return
 	}
@@ -232,6 +297,82 @@ func (h *LinkHandler) DeleteLink(w http.ResponseWriter, r *http.Request) {
 	render.Status(r, http.StatusOK)
 	render.JSON(w, r, &dto.SuccessResponse[db.DeleteLinkRow]{
 		Data: deletedLink,
+	})
+}
+
+// AddTagsToLink: POST /api/v1/links/{id}/tags
+func (h *LinkHandler) AddTagsToLink(w http.ResponseWriter, r *http.Request) {
+	userID := mw.GetUserIDFromContext(r.Context())
+
+	linkID, uuidErr := uuid.Parse(chi.URLParam(r, "id"))
+	if uuidErr != nil {
+		h.logger.Warn("Invalid link ID format",
+			zap.Error(uuidErr),
+			zap.String("provided_id", chi.URLParam(r, "id")),
+			zap.String("method", r.Method),
+			zap.String("path", r.URL.Path),
+		)
+
+		render.Status(r, http.StatusBadRequest)
+		render.JSON(w, r, dto.ErrorResponse{
+			Error: dto.ErrorObject{
+				Code:   apperrors.CodeInvalidID,
+				Title:  "Invalid ID format",
+				Detail: "Link ID must be a valid UUID format",
+			},
+		})
+		return
+	}
+
+	reqBody := mw.GetRequestBodyFromContext[dto.AddTagsToLink](r.Context())
+
+	updatedLink, err := h.LinkService.AddTagsToLink(r.Context(), userID, linkID, reqBody.TagIDs)
+	if err != nil {
+		h.handleError(w, r, err)
+		return
+	}
+
+	render.Status(r, http.StatusOK)
+	render.JSON(w, r, &dto.SuccessResponse[db.GetLinkByIdAndUserWithTagsRow]{
+		Data: updatedLink,
+	})
+}
+
+// RemoveTagsFromLink: DELETE /api/v1/links/{id}/tags
+func (h *LinkHandler) RemoveTagsFromLink(w http.ResponseWriter, r *http.Request) {
+	userID := mw.GetUserIDFromContext(r.Context())
+
+	linkID, uuidErr := uuid.Parse(chi.URLParam(r, "id"))
+	if uuidErr != nil {
+		h.logger.Warn("Invalid link ID format",
+			zap.Error(uuidErr),
+			zap.String("provided_id", chi.URLParam(r, "id")),
+			zap.String("method", r.Method),
+			zap.String("path", r.URL.Path),
+		)
+
+		render.Status(r, http.StatusBadRequest)
+		render.JSON(w, r, dto.ErrorResponse{
+			Error: dto.ErrorObject{
+				Code:   apperrors.CodeInvalidID,
+				Title:  "Invalid ID format",
+				Detail: "Link ID must be a valid UUID format",
+			},
+		})
+		return
+	}
+
+	reqBody := mw.GetRequestBodyFromContext[dto.RemoveTagsFromLink](r.Context())
+
+	updatedLink, err := h.LinkService.RemoveTagsFromLink(r.Context(), userID, linkID, reqBody.TagIDs)
+	if err != nil {
+		h.handleError(w, r, err)
+		return
+	}
+
+	render.Status(r, http.StatusOK)
+	render.JSON(w, r, &dto.SuccessResponse[db.GetLinkByIdAndUserWithTagsRow]{
+		Data: updatedLink,
 	})
 }
 

@@ -35,7 +35,7 @@ export function TopSourcesCard({ referrers }: TopSourcesCardProps) {
 									</div>
 									<span className='text-muted-foreground'>{item.clicks}</span>
 								</div>
-								<div className='w-full bg-muted/80 dark:bg-input/50 rounded-full h-2 overflow-hidden'>
+								<div className='w-full bg-muted dark:bg-input/50 rounded-full h-2 overflow-hidden'>
 									<div
 										className='h-full bg-primary rounded-full transition-all duration-150'
 										style={{

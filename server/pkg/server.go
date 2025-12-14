@@ -87,6 +87,9 @@ func New(config *config.Config, log logger.Logger) (*Server, error) {
 	linkSvc := service.NewLinkService(queries, s.RedisClient, s.Logger)
 	linkHandler := handlers.NewLinkHandler(linkSvc, s.Logger)
 
+	tagSvc := service.NewTagService(queries, s.Logger)
+	tagHandler := handlers.NewTagHandler(tagSvc, s.Logger)
+
 	s.Router.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   config.CORSAllowedOrigins,
 		AllowedMethods:   config.CORSAllowedMethods,
@@ -99,7 +102,7 @@ func New(config *config.Config, log logger.Logger) (*Server, error) {
 	s.Router.Use(middleware.RequestLogger(s.Logger))
 	s.Router.Use(chimw.Recoverer)
 
-	apiRouter := router.New(linkHandler, s.Logger)
+	apiRouter := router.New(linkHandler, tagHandler, s.Logger)
 	s.Router.Mount("/", apiRouter)
 
 	return s, nil

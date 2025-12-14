@@ -10,13 +10,22 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SsoCallbackRouteImport } from './routes/sso-callback'
+import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as LoginRouteImport } from './routes/login'
-import { Route as ShortcodeRouteImport } from './routes/$shortcode'
+import { Route as BillingRouteImport } from './routes/billing'
+import { Route as AccountRouteImport } from './routes/account'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as LinksIndexRouteImport } from './routes/links/index'
+import { Route as LinksShortcodeRouteImport } from './routes/links/$shortcode'
 
 const SsoCallbackRoute = SsoCallbackRouteImport.update({
   id: '/sso-callback',
   path: '/sso-callback',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SettingsRoute = SettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LoginRoute = LoginRouteImport.update({
@@ -24,9 +33,14 @@ const LoginRoute = LoginRouteImport.update({
   path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ShortcodeRoute = ShortcodeRouteImport.update({
-  id: '/$shortcode',
-  path: '/$shortcode',
+const BillingRoute = BillingRouteImport.update({
+  id: '/billing',
+  path: '/billing',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AccountRoute = AccountRouteImport.update({
+  id: '/account',
+  path: '/account',
   getParentRoute: () => rootRouteImport,
 } as any)
 const IndexRoute = IndexRouteImport.update({
@@ -34,39 +48,90 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const LinksIndexRoute = LinksIndexRouteImport.update({
+  id: '/links/',
+  path: '/links/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LinksShortcodeRoute = LinksShortcodeRouteImport.update({
+  id: '/links/$shortcode',
+  path: '/links/$shortcode',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
-  '/$shortcode': typeof ShortcodeRoute
+  '/account': typeof AccountRoute
+  '/billing': typeof BillingRoute
   '/login': typeof LoginRoute
+  '/settings': typeof SettingsRoute
   '/sso-callback': typeof SsoCallbackRoute
+  '/links/$shortcode': typeof LinksShortcodeRoute
+  '/links': typeof LinksIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
-  '/$shortcode': typeof ShortcodeRoute
+  '/account': typeof AccountRoute
+  '/billing': typeof BillingRoute
   '/login': typeof LoginRoute
+  '/settings': typeof SettingsRoute
   '/sso-callback': typeof SsoCallbackRoute
+  '/links/$shortcode': typeof LinksShortcodeRoute
+  '/links': typeof LinksIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
-  '/$shortcode': typeof ShortcodeRoute
+  '/account': typeof AccountRoute
+  '/billing': typeof BillingRoute
   '/login': typeof LoginRoute
+  '/settings': typeof SettingsRoute
   '/sso-callback': typeof SsoCallbackRoute
+  '/links/$shortcode': typeof LinksShortcodeRoute
+  '/links/': typeof LinksIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/$shortcode' | '/login' | '/sso-callback'
+  fullPaths:
+    | '/'
+    | '/account'
+    | '/billing'
+    | '/login'
+    | '/settings'
+    | '/sso-callback'
+    | '/links/$shortcode'
+    | '/links'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/$shortcode' | '/login' | '/sso-callback'
-  id: '__root__' | '/' | '/$shortcode' | '/login' | '/sso-callback'
+  to:
+    | '/'
+    | '/account'
+    | '/billing'
+    | '/login'
+    | '/settings'
+    | '/sso-callback'
+    | '/links/$shortcode'
+    | '/links'
+  id:
+    | '__root__'
+    | '/'
+    | '/account'
+    | '/billing'
+    | '/login'
+    | '/settings'
+    | '/sso-callback'
+    | '/links/$shortcode'
+    | '/links/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
-  ShortcodeRoute: typeof ShortcodeRoute
+  AccountRoute: typeof AccountRoute
+  BillingRoute: typeof BillingRoute
   LoginRoute: typeof LoginRoute
+  SettingsRoute: typeof SettingsRoute
   SsoCallbackRoute: typeof SsoCallbackRoute
+  LinksShortcodeRoute: typeof LinksShortcodeRoute
+  LinksIndexRoute: typeof LinksIndexRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -78,6 +143,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SsoCallbackRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/settings': {
+      id: '/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof SettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/login': {
       id: '/login'
       path: '/login'
@@ -85,11 +157,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/$shortcode': {
-      id: '/$shortcode'
-      path: '/$shortcode'
-      fullPath: '/$shortcode'
-      preLoaderRoute: typeof ShortcodeRouteImport
+    '/billing': {
+      id: '/billing'
+      path: '/billing'
+      fullPath: '/billing'
+      preLoaderRoute: typeof BillingRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/account': {
+      id: '/account'
+      path: '/account'
+      fullPath: '/account'
+      preLoaderRoute: typeof AccountRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/': {
@@ -99,14 +178,32 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/links/': {
+      id: '/links/'
+      path: '/links'
+      fullPath: '/links'
+      preLoaderRoute: typeof LinksIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/links/$shortcode': {
+      id: '/links/$shortcode'
+      path: '/links/$shortcode'
+      fullPath: '/links/$shortcode'
+      preLoaderRoute: typeof LinksShortcodeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
-  ShortcodeRoute: ShortcodeRoute,
+  AccountRoute: AccountRoute,
+  BillingRoute: BillingRoute,
   LoginRoute: LoginRoute,
+  SettingsRoute: SettingsRoute,
   SsoCallbackRoute: SsoCallbackRoute,
+  LinksShortcodeRoute: LinksShortcodeRoute,
+  LinksIndexRoute: LinksIndexRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

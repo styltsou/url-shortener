@@ -1,27 +1,58 @@
 // API types matching Go backend DTOs
 
+export interface Tag {
+	id: string;
+	name: string;
+	created_at: string; // ISO date string
+	updated_at?: string | null; // ISO date string
+}
+
 export interface Link {
 	id: string;
 	shortcode: string;
 	original_url: string;
-	user_id: string;
-	clicks: number | null;
+	user_id?: string;
+	clicks?: number | null;
 	expires_at: string | null; // ISO date string
 	created_at: string; // ISO date string
-	updated_at: string; // ISO date string
-	is_active?: boolean; // TODO: Add when backend supports it
+	updated_at: string | null; // ISO date string
+	is_active: boolean;
+	tags?: Tag[]; // Optional - create response doesn't include tags
 }
 
 export interface CreateLinkRequest {
 	url: string;
+	shortcode?: string;
+	expires_at?: string | null; // ISO 8601 datetime string
 }
 
 export interface UpdateLinkRequest {
 	shortcode?: string;
+	is_active?: boolean;
 	expires_at?: string | null; // ISO date string or null
 }
 
-import { generateMockAnalytics, MOCK_TAGS } from "@/lib/mock-data";
+export interface PaginationMeta {
+	page: number;
+	limit: number;
+	total: number;
+	total_pages: number;
+}
+
+// SuccessResponse matches backend - data is required, pagination is optional
+export interface SuccessResponse<T> {
+	data: T;
+	pagination?: PaginationMeta;
+}
+
+// PaginatedResponse is deprecated - use SuccessResponse instead
+// Kept for backwards compatibility
+export interface PaginatedResponse<T> {
+	data: T;
+	pagination: PaginationMeta;
+}
+
+import { generateMockAnalytics } from "@/lib/mock-data";
 import type { Url } from "./url";
 
 // Convert API Link to app Url type
@@ -33,7 +64,11 @@ export function linkToUrl(link: Link): Url {
 		createdAt: new Date(link.created_at),
 		expiresAt: link.expires_at ? new Date(link.expires_at) : null,
 		clicks: link.clicks || 0,
-		tags: [], // TODO: Fetch tags from backend when available
+		tags:
+			link.tags?.map((tag) => ({
+				id: tag.id,
+				name: tag.name,
+			})) || [], // Handle missing tags (e.g., from create response)
 		analytics: {
 			clicks_data: [], // TODO: Fetch from analytics endpoint when available
 			referrers_data: [], // TODO: Fetch from analytics endpoint when available
@@ -48,47 +83,6 @@ export function linkToUrl(link: Link): Url {
 	) {
 		url.analytics = generateMockAnalytics(url, "7days");
 	}
-
-	// Add mock tags temporarily for UI development
-	// TODO: Remove when backend provides tags
-	const tagAssignments: Record<string, number[]> = {
-		// Assign tags based on link ID or shortcode
-		"1": [0, 1, 6, 8, 9], // marketing, product, promo, urgent, featured
-		"2": [2, 4, 10], // documentation, internal, tutorial
-		"3": [2, 5, 7, 10, 11], // documentation, external, blog, tutorial, api
-	};
-
-	// Try to match by ID first, then by shortcode pattern
-	const linkId = link.id;
-	const shortcode = link.shortcode.toLowerCase();
-
-	let tagIndices: number[] = [];
-	if (tagAssignments[linkId]) {
-		tagIndices = tagAssignments[linkId];
-	} else if (shortcode.includes("launch") || shortcode.includes("promo")) {
-		tagIndices = [0, 1, 6, 8, 9]; // marketing, product, promo, urgent, featured
-	} else if (
-		shortcode.includes("go") ||
-		shortcode.includes("lang") ||
-		shortcode.includes("doc")
-	) {
-		tagIndices = [2, 4, 10]; // documentation, internal, tutorial
-	} else if (
-		shortcode.includes("react") ||
-		shortcode.includes("api") ||
-		shortcode.includes("learn")
-	) {
-		tagIndices = [2, 5, 7, 10, 11]; // documentation, external, blog, tutorial, api
-	} else {
-		// Default: assign 2-3 random tags
-		const randomIndices = new Set<number>();
-		while (randomIndices.size < Math.floor(Math.random() * 2) + 2) {
-			randomIndices.add(Math.floor(Math.random() * MOCK_TAGS.length));
-		}
-		tagIndices = Array.from(randomIndices);
-	}
-
-	url.tags = tagIndices.map((idx) => MOCK_TAGS[idx]).filter(Boolean);
 
 	return url;
 }

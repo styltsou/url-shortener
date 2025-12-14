@@ -79,8 +79,8 @@ RETURNING id, name, created_at, updated_at
 `
 
 type DeleteTagsParams struct {
-	Column1 []uuid.UUID `json:"column_1"`
-	UserID  string      `json:"user_id"`
+	TagIDs []uuid.UUID `json:"tag_i_ds"`
+	UserID string      `json:"user_id"`
 }
 
 type DeleteTagsRow struct {
@@ -91,7 +91,7 @@ type DeleteTagsRow struct {
 }
 
 func (q *Queries) DeleteTags(ctx context.Context, arg DeleteTagsParams) ([]DeleteTagsRow, error) {
-	rows, err := q.db.Query(ctx, deleteTags, arg.Column1, arg.UserID)
+	rows, err := q.db.Query(ctx, deleteTags, arg.TagIDs, arg.UserID)
 	if err != nil {
 		return nil, err
 	}

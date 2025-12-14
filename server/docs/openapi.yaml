@@ -9,6 +9,8 @@ servers:
 tags:
 - name: Links
   description: Operations for managing shortened links
+- name: Tags
+  description: Operations for managing tags
 - name: Public
   description: Public endpoints that don't require authentication
 components:
@@ -19,6 +21,30 @@ components:
       bearerFormat: JWT
       description: 'Clerk authentication token. Include the token in the Authorization header as: Bearer <token>'
   schemas:
+    Tag:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Unique identifier for the tag
+        name:
+          type: string
+          maxLength: 30
+          description: Tag name
+        created_at:
+          type: string
+          format: date-time
+          description: Timestamp when the tag was created
+        updated_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Timestamp when the tag was last updated
+      required:
+      - id
+      - name
+      - created_at
     Link:
       type: object
       properties:
@@ -34,18 +60,14 @@ components:
           type: string
           format: uri
           description: The original long URL that was shortened
-        user_id:
-          type: string
-          description: Clerk user ID of the link owner
-        clicks:
-          type: integer
-          nullable: true
-          description: Total number of clicks on this link
         expires_at:
           type: string
           format: date-time
           nullable: true
           description: Optional expiration date for the link
+        is_active:
+          type: boolean
+          description: Whether the link is active (can be disabled without deleting)
         created_at:
           type: string
           format: date-time
@@ -55,12 +77,18 @@ components:
           format: date-time
           nullable: true
           description: Timestamp when the link was last updated
+        tags:
+          type: array
+          items:
+            $ref: '#/components/schemas/Tag'
+          description: Tags associated with this link
       required:
       - id
       - shortcode
       - original_url
-      - user_id
+      - is_active
       - created_at
+      - tags
     CreateLinkRequest:
       type: object
       required:
@@ -73,15 +101,74 @@ components:
     UpdateLinkRequest:
       type: object
       properties:
-        code:
+        shortcode:
           type: string
           maxLength: 20
           description: New shortcode for the link (optional)
+        is_active:
+          type: boolean
+          description: Whether the link is active (optional)
         expires_at:
           type: string
           format: date-time
           nullable: true
           description: New expiration date for the link (optional, set to null to remove expiration)
+    CreateTagRequest:
+      type: object
+      required:
+      - name
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 30
+          description: Tag name (whitespace will be trimmed)
+    UpdateTagRequest:
+      type: object
+      required:
+      - name
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 30
+          description: Tag name (whitespace will be trimmed)
+    DeleteTagsRequest:
+      type: object
+      required:
+      - tag_ids
+      properties:
+        tag_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+          minItems: 1
+          description: Array of tag IDs to delete
+    AddTagsToLinkRequest:
+      type: object
+      required:
+      - tag_ids
+      properties:
+        tag_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+          minItems: 1
+          description: Array of tag IDs to add to the link
+    RemoveTagsFromLinkRequest:
+      type: object
+      required:
+      - tag_ids
+      properties:
+        tag_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+          minItems: 1
+          description: Array of tag IDs to remove from the link
     SuccessResponse:
       type: object
       properties:
@@ -105,6 +192,74 @@ components:
             $ref: '#/components/schemas/Link'
       required:
       - data
+    PaginationMeta:
+      type: object
+      properties:
+        page:
+          type: integer
+          minimum: 1
+          description: Current page number
+          example: 1
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+          description: Number of items per page
+          example: 20
+        total:
+          type: integer
+          minimum: 0
+          description: Total number of items
+          example: 45
+        total_pages:
+          type: integer
+          minimum: 0
+          description: Total number of pages
+          example: 3
+      required:
+      - page
+      - limit
+      - total
+      - total_pages
+    PaginatedLinksResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Link'
+          description: Array of links for the current page
+        pagination:
+          $ref: '#/components/schemas/PaginationMeta'
+      required:
+      - data
+      - pagination
+    TagSuccessResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/Tag'
+      required:
+      - data
+    TagsListSuccessResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Tag'
+      required:
+      - data
+    TagsBulkDeleteSuccessResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Tag'
+          description: Array of deleted tags
+      required:
+      - data
     ErrorResponse:
       type: object
       properties:
@@ -118,21 +273,27 @@ components:
         code:
           type: string
           enum:
-          - BAD_REQUEST
-          - UNAUTHORIZED
-          - FORBIDDEN
-          - NOT_FOUND
-          - INTERNAL_ERROR
-          - LINK_NOT_FOUND
-          - INVALID_LINK_URL
-          - USER_NOT_FOUND
+          - invalid_request
+          - authentication_required
+          - authentication_failed
+          - invalid_id
+          - link_not_found
+          - invalid_url
+          - link_expired
+          - code_taken
+          - tag_not_found
+          - tag_name_taken
+          - internal_server_error
           description: Machine-readable error code
-        message:
+        title:
           type: string
-          description: Human-readable error message
+          description: Human-readable error title
+        detail:
+          type: string
+          description: Detailed error message
       required:
       - code
-      - message
+      - title
 paths:
   /{code}:
     get:
@@ -159,15 +320,36 @@ paths:
                 format: uri
               description: The original URL to redirect to
         '404':
-          description: Link not found or expired
+          description: Link not found, expired, or inactive
+          content:
+            text/html:
+              schema:
+                type: string
+                description: HTML error page
+  /api/v1/health:
+    get:
+      tags:
+      - Public
+      summary: Health check
+      description: Returns the health status of the API service
+      operationId: healthCheck
+      responses:
+        '200':
+          description: Service is healthy
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
-              example:
-                error:
-                  code: NOT_FOUND
-                  message: Link not found or has expired
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  service:
+                    type: string
+                    example: URL Shortener API
+                required:
+                - status
+                - service
   /api/v1/reference:
     get:
       tags:
@@ -193,37 +375,64 @@ paths:
       tags:
       - Links
       summary: List all links
-      description: Retrieves all shortened links for the authenticated user
+      description: |
+        Retrieves paginated shortened links for the authenticated user, including their tags.
+        Supports filtering by tags and status (active/inactive).
       operationId: listLinks
       security:
       - BearerAuth: []
+      parameters:
+      - name: tags
+        in: query
+        required: false
+        description: Comma-separated list of tag UUIDs to filter by
+        schema:
+          type: string
+          example: "550e8400-e29b-41d4-a716-446655440000,6ba7b810-9dad-11d1-80b4-00c04fd430c8"
+      - name: status
+        in: query
+        required: false
+        description: Filter links by status
+        schema:
+          type: string
+          enum:
+          - all
+          - active
+          - inactive
+          default: all
+          example: active
+      - name: page
+        in: query
+        required: false
+        description: Page number (1-indexed)
+        schema:
+          type: integer
+          minimum: 1
+          default: 1
+          example: 1
+      - name: limit
+        in: query
+        required: false
+        description: Number of items per page (max 100)
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 5
+          example: 5
       responses:
         '200':
-          description: List of user's links
+          description: Paginated list of user's links
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/LinksListSuccessResponse'
-              example:
-                data:
-                - id: 123e4567-e89b-12d3-a456-426614174000
-                  shortcode: abc123
-                  original_url: https://example.com/very/long/url
-                  user_id: user_2abc123
-                  clicks: 42
-                  expires_at: null
-                  created_at: '2024-01-15T10:30:00Z'
-                  updated_at: '2024-01-15T10:30:00Z'
+                $ref: '#/components/schemas/PaginatedLinksResponse'
         '401':
           description: Unauthorized - Missing or invalid authentication token
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-              example:
-                error:
-                  code: UNAUTHORIZED
-                  message: Authentication required
         '500':
           description: Internal server error
           content:
@@ -244,8 +453,6 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/CreateLinkRequest'
-            example:
-              url: https://example.com/very/long/url/that/needs/shortening
       responses:
         '201':
           description: Link created successfully
@@ -253,59 +460,41 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/LinkSuccessResponse'
-              example:
-                data:
-                  id: 123e4567-e89b-12d3-a456-426614174000
-                  shortcode: abc123
-                  original_url: https://example.com/very/long/url/that/needs/shortening
-                  user_id: user_2abc123
-                  clicks: 0
-                  expires_at: null
-                  created_at: '2024-01-15T10:30:00Z'
-                  updated_at: null
         '400':
           description: Bad request - Invalid URL or request body
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-              example:
-                error:
-                  code: BAD_REQUEST
-                  message: Invalid request body
         '401':
           description: Unauthorized - Missing or invalid authentication token
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-              example:
-                error:
-                  code: UNAUTHORIZED
-                  message: Authentication required
         '500':
           description: Internal server error
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-  /api/v1/links/{id}:
+  /api/v1/links/{shortcode}:
     get:
       tags:
       - Links
-      summary: Get a link by ID
-      description: Retrieves a specific shortened link by its ID. The link must belong to the authenticated user.
+      summary: Get a link by shortcode
+      description: Retrieves a specific shortened link by its shortcode. The link must belong to the authenticated user.
       operationId: getLink
       security:
       - BearerAuth: []
       parameters:
-      - name: id
+      - name: shortcode
         in: path
         required: true
         schema:
           type: string
-          format: uuid
-        description: The UUID of the link to retrieve
+          maxLength: 20
+        description: The shortcode of the link to retrieve
       responses:
         '200':
           description: Link retrieved successfully
@@ -313,48 +502,30 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/LinkSuccessResponse'
-              example:
-                data:
-                  id: 123e4567-e89b-12d3-a456-426614174000
-                  shortcode: abc123
-                  original_url: https://example.com/very/long/url
-                  user_id: user_2abc123
-                  clicks: 42
-                  expires_at: null
-                  created_at: '2024-01-15T10:30:00Z'
-                  updated_at: '2024-01-15T10:30:00Z'
         '401':
           description: Unauthorized - Missing or invalid authentication token
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-              example:
-                error:
-                  code: UNAUTHORIZED
-                  message: Authentication required
         '404':
           description: Link not found
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-              example:
-                error:
-                  code: LINK_NOT_FOUND
-                  message: Link not found
         '500':
           description: Internal server error
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/links/{id}:
     patch:
       tags:
       - Links
       summary: Update a link
-      description: Updates a shortened link. Currently supports updating the shortcode and expiration date. The link must
-        belong to the authenticated user.
+      description: Updates a shortened link. Supports updating shortcode, is_active status, and expiration date. The link must belong to the authenticated user.
       operationId: updateLink
       security:
       - BearerAuth: []
@@ -372,9 +543,6 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/UpdateLinkRequest'
-            example:
-              code: newcode
-              expires_at: '2024-12-31T23:59:59Z'
       responses:
         '200':
           description: Link updated successfully
@@ -382,46 +550,30 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/LinkSuccessResponse'
-              example:
-                data:
-                  id: 123e4567-e89b-12d3-a456-426614174000
-                  shortcode: newcode
-                  original_url: https://example.com/very/long/url
-                  user_id: user_2abc123
-                  clicks: 42
-                  expires_at: '2024-12-31T23:59:59Z'
-                  created_at: '2024-01-15T10:30:00Z'
-                  updated_at: '2024-01-15T11:00:00Z'
         '400':
           description: Bad request - Invalid request body
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-              example:
-                error:
-                  code: BAD_REQUEST
-                  message: Invalid request body
         '401':
           description: Unauthorized - Missing or invalid authentication token
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-              example:
-                error:
-                  code: UNAUTHORIZED
-                  message: Authentication required
         '404':
           description: Link not found
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-              example:
-                error:
-                  code: LINK_NOT_FOUND
-                  message: Link not found
+        '409':
+          description: Conflict - Shortcode already taken
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '500':
           description: Internal server error
           content:
@@ -432,7 +584,7 @@ paths:
       tags:
       - Links
       summary: Delete a link
-      description: Deletes a shortened link. The link must belong to the authenticated user.
+      description: Soft deletes a shortened link. The link must belong to the authenticated user.
       operationId: deleteLink
       security:
       - BearerAuth: []
@@ -445,28 +597,358 @@ paths:
           format: uuid
         description: The UUID of the link to delete
       responses:
-        '204':
+        '200':
           description: Link deleted successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LinkSuccessResponse'
+        '400':
+          description: Bad request - Invalid ID format
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '401':
           description: Unauthorized - Missing or invalid authentication token
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-              example:
-                error:
-                  code: UNAUTHORIZED
-                  message: Authentication required
         '404':
           description: Link not found
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-              example:
-                error:
-                  code: LINK_NOT_FOUND
-                  message: Link not found
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/links/{id}/tags:
+    post:
+      tags:
+      - Links
+      summary: Add tags to a link
+      description: Adds one or more tags to a link. Both the link and all tags must belong to the authenticated user.
+      operationId: addTagsToLink
+      security:
+      - BearerAuth: []
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+        description: The UUID of the link
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddTagsToLinkRequest'
+      responses:
+        '200':
+          description: Tags added successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LinkSuccessResponse'
+        '400':
+          description: Bad request - Invalid ID format or request body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized - Missing or invalid authentication token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Link or tag not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/links/{id}/tags/remove:
+    post:
+      tags:
+      - Links
+      summary: Remove tags from a link
+      description: Removes one or more tags from a link. Both the link and all tags must belong to the authenticated user.
+      operationId: removeTagsFromLink
+      security:
+      - BearerAuth: []
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+        description: The UUID of the link
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RemoveTagsFromLinkRequest'
+      responses:
+        '200':
+          description: Tags removed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LinkSuccessResponse'
+        '400':
+          description: Bad request - Invalid ID format or request body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized - Missing or invalid authentication token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Link or tag not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/tags:
+    get:
+      tags:
+      - Tags
+      summary: List all tags
+      description: Retrieves all tags for the authenticated user
+      operationId: listTags
+      security:
+      - BearerAuth: []
+      responses:
+        '200':
+          description: List of user's tags
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TagsListSuccessResponse'
+        '401':
+          description: Unauthorized - Missing or invalid authentication token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    post:
+      tags:
+      - Tags
+      summary: Create a new tag
+      description: Creates a new tag for the authenticated user. Tag names must be unique per user.
+      operationId: createTag
+      security:
+      - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTagRequest'
+      responses:
+        '201':
+          description: Tag created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TagSuccessResponse'
+        '400':
+          description: Bad request - Invalid request body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized - Missing or invalid authentication token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Conflict - Tag name already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/tags/{id}:
+    patch:
+      tags:
+      - Tags
+      summary: Update a tag
+      description: Updates a tag name. The tag must belong to the authenticated user. Tag names must be unique per user.
+      operationId: updateTag
+      security:
+      - BearerAuth: []
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+        description: The UUID of the tag to update
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateTagRequest'
+      responses:
+        '200':
+          description: Tag updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TagSuccessResponse'
+        '400':
+          description: Bad request - Invalid ID format or request body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized - Missing or invalid authentication token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Tag not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Conflict - Tag name already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    delete:
+      tags:
+      - Tags
+      summary: Delete a tag
+      description: Hard deletes a tag. The tag must belong to the authenticated user. All link-tag relationships will be automatically removed.
+      operationId: deleteTag
+      security:
+      - BearerAuth: []
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+        description: The UUID of the tag to delete
+      responses:
+        '200':
+          description: Tag deleted successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TagSuccessResponse'
+        '400':
+          description: Bad request - Invalid ID format
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized - Missing or invalid authentication token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Tag not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/tags/bulk-delete:
+    post:
+      tags:
+      - Tags
+      summary: Bulk delete tags
+      description: Hard deletes multiple tags. All tags must belong to the authenticated user. All link-tag relationships will be automatically removed.
+      operationId: bulkDeleteTags
+      security:
+      - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeleteTagsRequest'
+      responses:
+        '200':
+          description: Tags deleted successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TagsBulkDeleteSuccessResponse'
+        '400':
+          description: Bad request - Invalid request body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized - Missing or invalid authentication token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '500':
           description: Internal server error
           content:
