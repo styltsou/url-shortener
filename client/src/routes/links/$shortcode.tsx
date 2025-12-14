@@ -11,6 +11,7 @@ import { PerformanceChartCard } from "@/components/link/performance-chart-card";
 import { TotalClicksCard } from "@/components/link/total-clicks-card";
 import { TopSourcesCard } from "@/components/link/top-sources-card";
 import { LoadingState } from "@/components/shared/loading-state";
+import { LinkPageSkeleton } from "@/components/link/link-page-skeleton";
 
 export const Route = createFileRoute("/links/$shortcode")({
 	component: LinkDetailPage,
@@ -42,8 +43,8 @@ function LinkDetailPage() {
 	if (isLoadingLinks) {
 		return (
 			<main className='p-4 sm:p-6'>
-				<div className='max-w-6xl mx-auto text-center py-20'>
-					<div className='text-lg text-muted-foreground'>Loading link...</div>
+				<div className='max-w-6xl mx-auto'>
+					<LinkPageSkeleton />
 				</div>
 			</main>
 		);

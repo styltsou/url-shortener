@@ -24,12 +24,17 @@ import {
 	SidebarMenuItem,
 	useSidebar,
 } from "@/components/ui/sidebar";
+import { NavUserSkeleton } from "./nav-user-skeleton";
 
 export function NavUser() {
 	const { isMobile } = useSidebar();
-	const { user } = useUser();
+	const { user, isLoaded } = useUser();
 	const { signOut } = useClerk();
 	const navigate = useNavigate();
+
+	if (!isLoaded) {
+		return <NavUserSkeleton />;
+	}
 
 	if (!user) {
 		return null;

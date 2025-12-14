@@ -11,7 +11,7 @@ import {
 } from "@/components/links/status-filter";
 import { useLinks, useCreateLink } from "@/hooks/use-links";
 import { useTags, useAddTagsToLink } from "@/hooks/use-tags";
-import { LinksListSkeleton } from "@/components/links/links-list-skeleton";
+import { LinksPageSkeleton } from "@/components/links/links-page-skeleton";
 import { LinksHeader } from "@/components/links/links-header";
 import { LinksErrorState } from "@/components/links/links-error-state";
 import { EmptyLinksState } from "@/components/links/empty-links-state";
@@ -36,7 +36,7 @@ function LinksPage() {
 		status: statusFilter,
 		page,
 		limit,
-	})
+	});
 
 	const urls = data?.urls ?? [];
 	const pagination = data?.pagination;
@@ -48,17 +48,17 @@ function LinksPage() {
 	const handleTagFilterChange = (tagIds: string[]) => {
 		setSelectedTagIds(tagIds);
 		setPage(1);
-	}
+	};
 
 	const handleStatusFilterChange = (status: StatusFilterType) => {
 		setStatusFilter(status);
 		setPage(1);
-	}
+	};
 
 	const handleLimitChange = (newLimit: number) => {
 		setLimit(newLimit);
 		setPage(1); // Reset to first page when changing page size
-	}
+	};
 
 	if (!isLoaded) {
 		return <LoadingState />;
@@ -79,60 +79,58 @@ function LinksPage() {
 			url: originalUrl,
 			...(customCode && { shortcode: customCode }),
 			...(expirationDate && { expires_at: expirationDate }),
-		})
+		});
 
 		// Then add tags if any were selected
 		if (tagIds && tagIds.length > 0) {
 			await addTagsToLink.mutateAsync({
 				linkId: createdLink.id,
 				tagIds: tagIds,
-			})
+			});
 		}
-	}
+	};
 
 	if (error) {
 		return <LinksErrorState error={error} />;
 	}
 
 	return (
-        <main className='py-12 px-4 sm:px-6'>
-            <div className='max-w-4xl mx-auto'>
+		<main className='py-12 px-4 sm:px-6'>
+			<div className='max-w-4xl mx-auto'>
 				<NewUrlForm
 					onShorten={handleShorten}
 					isLoading={createLink.isPending}
 				/>
 
-				<div className='mb-4'>
-					<LinksHeader
-						isLoading={isLoading}
-						totalCount={pagination?.total ?? 0}
-						hasActiveFilters={
-							selectedTagIds.length > 0 || statusFilter !== "all"
-						}
-					/>
-					{!isLoadingTags && (
-						<div className='mt-3 flex items-center justify-between gap-4'>
-							{availableTags.length > 0 && (
-								<TagFilter
-									availableTags={availableTags}
-									selectedTagIds={selectedTagIds}
-									onSelectionChange={handleTagFilterChange}
-								/>
-							)}
-							<div className='ml-auto'>
-								<StatusFilter
-									value={statusFilter}
-									onValueChange={handleStatusFilterChange}
-								/>
-							</div>
-						</div>
-					)}
-				</div>
-
-				{isLoading ? (
-					<LinksListSkeleton />
+				{isLoading || isLoadingTags ? (
+					<LinksPageSkeleton />
 				) : (
 					<>
+						<div className='mb-4'>
+							<LinksHeader
+								isLoading={isLoading}
+								totalCount={pagination?.total ?? 0}
+								hasActiveFilters={
+									selectedTagIds.length > 0 || statusFilter !== "all"
+								}
+							/>
+							<div className='mt-3 flex items-center justify-between gap-4'>
+								{availableTags.length > 0 && (
+									<TagFilter
+										availableTags={availableTags}
+										selectedTagIds={selectedTagIds}
+										onSelectionChange={handleTagFilterChange}
+									/>
+								)}
+								<div className='ml-auto'>
+									<StatusFilter
+										value={statusFilter}
+										onValueChange={handleStatusFilterChange}
+									/>
+								</div>
+							</div>
+						</div>
+
 						<div className='space-y-2'>
 							{urls.map((url) => (
 								<UrlCard key={url.id} url={url} />
@@ -140,7 +138,7 @@ function LinksPage() {
 							{urls.length === 0 &&
 								(selectedTagIds.length > 0 || statusFilter !== "all") && (
 									<div className='text-center py-12 text-muted-foreground'>
-										<p className="text-sm">
+										<p className='text-sm'>
 											No links match the selected filters.
 										</p>
 									</div>
@@ -158,7 +156,7 @@ function LinksPage() {
 										onPageChange={setPage}
 									/>
 								) : (
-									(<div />) // Empty div to maintain flex layout
+									<div /> // Empty div to maintain flex layout
 								)}
 								<PageSizeSelector
 									value={limit}
@@ -169,6 +167,6 @@ function LinksPage() {
 					</>
 				)}
 			</div>
-        </main>
-    )
+		</main>
+	);
 }
