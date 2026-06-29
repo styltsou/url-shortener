@@ -6,7 +6,6 @@ import { Link } from "@tanstack/react-router";
 
 import { NavMain } from "@/components/sidebar/nav-main";
 import { NavUser } from "@/components/sidebar/nav-user";
-import { NavFeedback } from "@/components/sidebar/nav-feedback";
 import {
 	Sidebar,
 	SidebarContent,
@@ -58,7 +57,6 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 				<NavMain items={navItems} />
 			</SidebarContent>
 			<SidebarFooter>
-				<NavFeedback />
 				<NavUser />
 			</SidebarFooter>
 			<SidebarRail />

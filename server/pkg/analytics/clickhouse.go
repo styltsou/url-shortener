@@ -59,10 +59,10 @@ func New(ctx context.Context, cfg Config, log logger.Logger) (*Client, error) {
 			Username: cfg.Username,
 			Password: cfg.Password,
 		},
-		DialTimeout:      5 * time.Second,
-		MaxOpenConns:     5,
-		MaxIdleConns:     2,
-		ConnMaxLifetime:  time.Minute * 5,
+		DialTimeout:     5 * time.Second,
+		MaxOpenConns:    5,
+		MaxIdleConns:    2,
+		ConnMaxLifetime: time.Minute * 5,
 	})
 	if err != nil {
 		return &Client{conn: nil, logger: log},

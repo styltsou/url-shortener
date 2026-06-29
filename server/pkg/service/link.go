@@ -86,10 +86,10 @@ type LinkQueries interface {
 }
 
 type LinkService struct {
-	queries          LinkQueries
-	cache            *redis.Client
-	analyticsClient  *analytics.Client
-	logger           logger.Logger
+	queries         LinkQueries
+	cache           *redis.Client
+	analyticsClient *analytics.Client
+	logger          logger.Logger
 }
 
 func NewLinkService(queries LinkQueries, cache *redis.Client, analyticsClient *analytics.Client, logger logger.Logger) *LinkService {
@@ -573,11 +573,11 @@ func (s *LinkService) RemoveTagsFromLink(ctx context.Context, userID string, lin
 }
 
 type DashboardStats struct {
-	TotalLinks    int64                    `json:"total_links"`
-	ActiveLinks   int64                    `json:"active_links"`
-	TotalClicks   int                      `json:"total_clicks"`
+	TotalLinks     int64                      `json:"total_links"`
+	ActiveLinks    int64                      `json:"active_links"`
+	TotalClicks    int                        `json:"total_clicks"`
 	ClicksOverTime []analytics.ClicksOverTime `json:"clicks_over_time,omitempty"`
-	RecentLinks   []db.GetRecentLinksRow   `json:"recent_links"`
+	RecentLinks    []db.GetRecentLinksRow     `json:"recent_links"`
 }
 
 func (s *LinkService) GetDashboardStats(ctx context.Context, userID string) (*DashboardStats, error) {
