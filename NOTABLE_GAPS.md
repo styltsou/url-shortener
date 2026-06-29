@@ -4,11 +4,11 @@ This file documents known gaps and deferred work discovered during codebase expl
 
 ## Stub Pages
 
-- **Dashboard** (`/`) — now implemented, was previously "coming soon"
-- **Account** (`/account`) — placeholder content
+- **Dashboard** (`/`) — implemented (aggregate stats, chart, recent links)
+- **Account** (`/account`) — implemented (Clerk profile, email, auth providers)
 - **Billing** (`/billing`) — placeholder content
 - **Settings** (`/settings`) — placeholder content
-- **Feedback** (`/feedback`) — UI exists, but uses simulated API call instead of a real backend endpoint
+- **Feedback** (`/feedback`) — removed; feedback collected externally
 
 ## Missing Production Features
 
@@ -26,7 +26,7 @@ This file documents known gaps and deferred work discovered during codebase expl
 - **No integration/E2E tests** — all tests are unit tests with mocks; no real DB/Redis/ClickHouse tests
 - **No ClickHouse mock in unit tests** — analytics methods are skipped when `analyticsClient == nil`
 - **No proper DB migration tool** — migrations run via handwritten shell scripts instead of a framework (golang-migrate, goose, etc.)
-- **`server/main` binary committed** (18MB) — compiled binary is in the repo; `.gitignore` lists it but it was committed previously
+- **`server/main` binary** — was committed, now removed from git tracking
 - **No CI/CD** — no deployment scripts or pipeline configuration
 - **No monitoring/alerting** — no structured metrics, health check webhooks, or error alerting
 
