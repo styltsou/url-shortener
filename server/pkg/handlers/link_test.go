@@ -34,6 +34,7 @@ type mockLinkService struct {
 	RemoveTagsFromLinkFunc func(ctx context.Context, userID string, linkID uuid.UUID, tagIDs []uuid.UUID) (db.GetLinkByIdAndUserWithTagsRow, error)
 	RecordClickFunc        func(ctx context.Context, linkID uuid.UUID, ip, userAgent, referrer string)
 	GetLinkAnalyticsFunc   func(ctx context.Context, userID string, shortcode string) (*analytics.LinkAnalytics, error)
+	GetDashboardStatsFunc  func(ctx context.Context, userID string) (*service.DashboardStats, error)
 }
 
 func (m *mockLinkService) CreateShortLink(ctx context.Context, userID string, originalURL string, customShortcode *string, expiresAt *time.Time) (db.TryCreateLinkRow, error) {
@@ -103,6 +104,13 @@ func (m *mockLinkService) GetLinkAnalytics(ctx context.Context, userID string, s
 		return m.GetLinkAnalyticsFunc(ctx, userID, shortcode)
 	}
 	return &analytics.LinkAnalytics{}, nil
+}
+
+func (m *mockLinkService) GetDashboardStats(ctx context.Context, userID string) (*service.DashboardStats, error) {
+	if m.GetDashboardStatsFunc != nil {
+		return m.GetDashboardStatsFunc(ctx, userID)
+	}
+	return &service.DashboardStats{}, errors.New("not implemented")
 }
 
 func createTestLogger() logger.Logger {

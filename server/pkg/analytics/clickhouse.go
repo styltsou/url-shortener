@@ -245,6 +245,78 @@ func (c *Client) getTopUserAgents(ctx context.Context, linkID uuid.UUID, since, 
 	return result, nil
 }
 
+type UserAnalytics struct {
+	TotalClicks    int              `json:"total_clicks"`
+	ClicksOverTime []ClicksOverTime `json:"clicks_over_time"`
+}
+
+func (c *Client) GetUserAnalytics(ctx context.Context, linkIDs []uuid.UUID, since, until time.Time) (*UserAnalytics, error) {
+	if c.conn == nil || len(linkIDs) == 0 {
+		return &UserAnalytics{}, nil
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	totalClicks, err := c.getUserTotalClicks(ctx, linkIDs, since, until)
+	if err != nil {
+		return nil, err
+	}
+
+	clicksOverTime, err := c.getUserClicksOverTime(ctx, linkIDs, since, until)
+	if err != nil {
+		return nil, err
+	}
+
+	return &UserAnalytics{
+		TotalClicks:    totalClicks,
+		ClicksOverTime: clicksOverTime,
+	}, nil
+}
+
+func (c *Client) getUserTotalClicks(ctx context.Context, linkIDs []uuid.UUID, since, until time.Time) (int, error) {
+	rows, err := c.conn.Query(ctx, `
+		SELECT count() FROM link4it.click_events
+		WHERE link_id = ANY(?) AND timestamp >= ? AND timestamp <= ?
+	`, linkIDs, since, until)
+	if err != nil {
+		return 0, fmt.Errorf("failed to query user total clicks: %w", err)
+	}
+	defer rows.Close()
+
+	var total int
+	for rows.Next() {
+		if err := rows.Scan(&total); err != nil {
+			return 0, fmt.Errorf("failed to scan user total clicks: %w", err)
+		}
+	}
+	return total, nil
+}
+
+func (c *Client) getUserClicksOverTime(ctx context.Context, linkIDs []uuid.UUID, since, until time.Time) ([]ClicksOverTime, error) {
+	rows, err := c.conn.Query(ctx, `
+		SELECT toDate(timestamp) AS date, count() AS clicks
+		FROM link4it.click_events
+		WHERE link_id = ANY(?) AND timestamp >= ? AND timestamp <= ?
+		GROUP BY date
+		ORDER BY date
+	`, linkIDs, since, until)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query user clicks over time: %w", err)
+	}
+	defer rows.Close()
+
+	var result []ClicksOverTime
+	for rows.Next() {
+		var stat ClicksOverTime
+		if err := rows.Scan(&stat.Date, &stat.Clicks); err != nil {
+			return nil, fmt.Errorf("failed to scan user clicks over time: %w", err)
+		}
+		result = append(result, stat)
+	}
+	return result, nil
+}
+
 func (c *Client) Close() error {
 	if c == nil || c.conn == nil {
 		return nil

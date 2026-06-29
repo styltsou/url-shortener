@@ -80,6 +80,9 @@ type LinkQueries interface {
 	AddTagsToLink(ctx context.Context, arg db.AddTagsToLinkParams) error
 	RemoveTagsFromLink(ctx context.Context, arg db.RemoveTagsFromLinkParams) error
 	GetLinkByIdAndUserWithTags(ctx context.Context, arg db.GetLinkByIdAndUserWithTagsParams) (db.GetLinkByIdAndUserWithTagsRow, error)
+	GetRecentLinks(ctx context.Context, arg db.GetRecentLinksParams) ([]db.GetRecentLinksRow, error)
+	CountActiveLinks(ctx context.Context, userID string) (int64, error)
+	ListUserLinkIDs(ctx context.Context, userID string) ([]uuid.UUID, error)
 }
 
 type LinkService struct {
@@ -567,6 +570,74 @@ func (s *LinkService) RemoveTagsFromLink(ctx context.Context, userID string, lin
 	}
 
 	return link, nil
+}
+
+type DashboardStats struct {
+	TotalLinks    int64                    `json:"total_links"`
+	ActiveLinks   int64                    `json:"active_links"`
+	TotalClicks   int                      `json:"total_clicks"`
+	ClicksOverTime []analytics.ClicksOverTime `json:"clicks_over_time,omitempty"`
+	RecentLinks   []db.GetRecentLinksRow   `json:"recent_links"`
+}
+
+func (s *LinkService) GetDashboardStats(ctx context.Context, userID string) (*DashboardStats, error) {
+	totalLinks, err := s.queries.CountUserLinks(ctx, db.CountUserLinksParams{
+		UserID:   userID,
+		IsActive: nil,
+		TagIds:   nil,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to count total links: %w", err)
+	}
+
+	activeLinks, err := s.queries.CountActiveLinks(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to count active links: %w", err)
+	}
+
+	recentLinks, err := s.queries.GetRecentLinks(ctx, db.GetRecentLinksParams{
+		UserID: userID,
+		Limit:  5,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get recent links: %w", err)
+	}
+
+	if recentLinks == nil {
+		recentLinks = []db.GetRecentLinksRow{}
+	}
+
+	dashboard := &DashboardStats{
+		TotalLinks:  totalLinks,
+		ActiveLinks: activeLinks,
+		RecentLinks: recentLinks,
+	}
+
+	if s.analyticsClient != nil {
+		linkIDs, err := s.queries.ListUserLinkIDs(ctx, userID)
+		if err != nil {
+			s.logger.Warn("Failed to get user link IDs for analytics",
+				zap.String("user_id", userID),
+				zap.Error(err),
+			)
+		} else if len(linkIDs) > 0 {
+			until := time.Now()
+			since := until.AddDate(0, 0, -30)
+
+			ua, err := s.analyticsClient.GetUserAnalytics(ctx, linkIDs, since, until)
+			if err != nil {
+				s.logger.Warn("Failed to get user analytics",
+					zap.String("user_id", userID),
+					zap.Error(err),
+				)
+			} else {
+				dashboard.TotalClicks = ua.TotalClicks
+				dashboard.ClicksOverTime = ua.ClicksOverTime
+			}
+		}
+	}
+
+	return dashboard, nil
 }
 
 // invalidateCache removes a link from the cache

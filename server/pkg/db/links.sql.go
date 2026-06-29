@@ -12,6 +12,19 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countActiveLinks = `-- name: CountActiveLinks :one
+SELECT count(*) FROM links
+WHERE user_id = $1 AND deleted_at IS NULL AND is_active = true
+AND (expires_at IS NULL OR expires_at > NOW())
+`
+
+func (q *Queries) CountActiveLinks(ctx context.Context, userID string) (int64, error) {
+	row := q.db.QueryRow(ctx, countActiveLinks, userID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countUserLinks = `-- name: CountUserLinks :one
 SELECT COUNT(DISTINCT l.id) as total
 FROM links l
@@ -272,6 +285,82 @@ func (q *Queries) GetLinkForRedirect(ctx context.Context, shortcode string) (Get
 	var i GetLinkForRedirectRow
 	err := row.Scan(&i.ID, &i.OriginalUrl)
 	return i, err
+}
+
+const getRecentLinks = `-- name: GetRecentLinks :many
+SELECT id, shortcode, original_url, is_active, expires_at, created_at, updated_at
+FROM links
+WHERE user_id = $1 AND deleted_at IS NULL
+ORDER BY created_at DESC
+LIMIT $2
+`
+
+type GetRecentLinksParams struct {
+	UserID string `json:"user_id"`
+	Limit  int32  `json:"limit"`
+}
+
+type GetRecentLinksRow struct {
+	ID          uuid.UUID        `json:"id"`
+	Shortcode   string           `json:"shortcode"`
+	OriginalUrl string           `json:"original_url"`
+	IsActive    bool             `json:"is_active"`
+	ExpiresAt   pgtype.Timestamp `json:"expires_at"`
+	CreatedAt   pgtype.Timestamp `json:"created_at"`
+	UpdatedAt   pgtype.Timestamp `json:"updated_at"`
+}
+
+func (q *Queries) GetRecentLinks(ctx context.Context, arg GetRecentLinksParams) ([]GetRecentLinksRow, error) {
+	rows, err := q.db.Query(ctx, getRecentLinks, arg.UserID, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetRecentLinksRow
+	for rows.Next() {
+		var i GetRecentLinksRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Shortcode,
+			&i.OriginalUrl,
+			&i.IsActive,
+			&i.ExpiresAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listUserLinkIDs = `-- name: ListUserLinkIDs :many
+SELECT id FROM links
+WHERE user_id = $1 AND deleted_at IS NULL
+`
+
+func (q *Queries) ListUserLinkIDs(ctx context.Context, userID string) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, listUserLinkIDs, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []uuid.UUID
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listUserLinks = `-- name: ListUserLinks :many

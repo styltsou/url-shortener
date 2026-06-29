@@ -182,3 +182,22 @@ UPDATE links
 SET deleted_at = NOW(), updated_at = NOW()
 WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL
 RETURNING id, shortcode, original_url, is_active, expires_at, created_at, updated_at;
+
+
+-- name: GetRecentLinks :many
+SELECT id, shortcode, original_url, is_active, expires_at, created_at, updated_at
+FROM links
+WHERE user_id = $1 AND deleted_at IS NULL
+ORDER BY created_at DESC
+LIMIT $2;
+
+
+-- name: ListUserLinkIDs :many
+SELECT id FROM links
+WHERE user_id = $1 AND deleted_at IS NULL;
+
+
+-- name: CountActiveLinks :one
+SELECT count(*) FROM links
+WHERE user_id = $1 AND deleted_at IS NULL AND is_active = true
+AND (expires_at IS NULL OR expires_at > NOW());

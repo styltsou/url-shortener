@@ -29,6 +29,9 @@ type mockQueries struct {
 	AddTagsToLinkFunc              func(ctx context.Context, arg db.AddTagsToLinkParams) error
 	RemoveTagsFromLinkFunc         func(ctx context.Context, arg db.RemoveTagsFromLinkParams) error
 	GetLinkByIdAndUserWithTagsFunc func(ctx context.Context, arg db.GetLinkByIdAndUserWithTagsParams) (db.GetLinkByIdAndUserWithTagsRow, error)
+	GetRecentLinksFunc             func(ctx context.Context, arg db.GetRecentLinksParams) ([]db.GetRecentLinksRow, error)
+	CountActiveLinksFunc           func(ctx context.Context, userID string) (int64, error)
+	ListUserLinkIDsFunc            func(ctx context.Context, userID string) ([]uuid.UUID, error)
 }
 
 func (m *mockQueries) TryCreateLink(ctx context.Context, arg db.TryCreateLinkParams) (db.TryCreateLinkRow, error) {
@@ -106,6 +109,27 @@ func (m *mockQueries) GetLinkByIdAndUserWithTags(ctx context.Context, arg db.Get
 		return m.GetLinkByIdAndUserWithTagsFunc(ctx, arg)
 	}
 	return db.GetLinkByIdAndUserWithTagsRow{}, errors.New("not implemented")
+}
+
+func (m *mockQueries) GetRecentLinks(ctx context.Context, arg db.GetRecentLinksParams) ([]db.GetRecentLinksRow, error) {
+	if m.GetRecentLinksFunc != nil {
+		return m.GetRecentLinksFunc(ctx, arg)
+	}
+	return nil, errors.New("not implemented")
+}
+
+func (m *mockQueries) CountActiveLinks(ctx context.Context, userID string) (int64, error) {
+	if m.CountActiveLinksFunc != nil {
+		return m.CountActiveLinksFunc(ctx, userID)
+	}
+	return 0, errors.New("not implemented")
+}
+
+func (m *mockQueries) ListUserLinkIDs(ctx context.Context, userID string) ([]uuid.UUID, error) {
+	if m.ListUserLinkIDsFunc != nil {
+		return m.ListUserLinkIDsFunc(ctx, userID)
+	}
+	return nil, errors.New("not implemented")
 }
 
 // createTestLogger creates a test logger that can be used in tests

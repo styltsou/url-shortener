@@ -42,6 +42,7 @@ type LinkService interface {
 	RemoveTagsFromLink(ctx context.Context, userID string, linkID uuid.UUID, tagIDs []uuid.UUID) (db.GetLinkByIdAndUserWithTagsRow, error)
 	RecordClick(ctx context.Context, linkID uuid.UUID, ip, userAgent, referrer string)
 	GetLinkAnalytics(ctx context.Context, userID string, shortcode string) (*analytics.LinkAnalytics, error)
+	GetDashboardStats(ctx context.Context, userID string) (*service.DashboardStats, error)
 }
 
 type LinkHandler struct {
@@ -422,6 +423,22 @@ func (h *LinkHandler) GetQRCode(w http.ResponseWriter, r *http.Request) {
 			zap.String("shortcode", shortcode),
 		)
 	}
+}
+
+// GetDashboard: GET /api/v1/dashboard
+func (h *LinkHandler) GetDashboard(w http.ResponseWriter, r *http.Request) {
+	userID := mw.GetUserIDFromContext(r.Context())
+
+	stats, err := h.LinkService.GetDashboardStats(r.Context(), userID)
+	if err != nil {
+		h.handleError(w, r, err)
+		return
+	}
+
+	render.Status(r, http.StatusOK)
+	render.JSON(w, r, dto.SuccessResponse[*service.DashboardStats]{
+		Data: stats,
+	})
 }
 
 // GetLinkAnalytics: GET /api/v1/links/{shortcode}/analytics

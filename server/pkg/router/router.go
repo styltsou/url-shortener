@@ -84,6 +84,8 @@ func New(linkH *handlers.LinkHandler, tagH *handlers.TagHandler, logger logger.L
 			r.With(mw.RequestValidator[dto.RemoveTagsFromLink](logger)).Post("/{id}/tags/remove", linkH.RemoveTagsFromLink)
 		})
 
+		r.Get("/dashboard", linkH.GetDashboard)
+
 		r.Route("/tags", func(r chi.Router) {
 			r.Get("/", tagH.ListTags)
 			r.With(mw.RequestValidator[dto.CreateTag](logger)).Post("/", tagH.CreateTag)
