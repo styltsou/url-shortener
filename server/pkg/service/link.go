@@ -2,11 +2,11 @@ package service
 
 import (
 	"context"
-	"crypto/rand"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/binary"
 	"errors"
 	"fmt"
-	"math/big"
 	"net/url"
 	"time"
 
@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/redis/go-redis/v9"
+	"github.com/styltsou/url-shortener/server/pkg/analytics"
 	"github.com/styltsou/url-shortener/server/pkg/db"
 	apperrors "github.com/styltsou/url-shortener/server/pkg/errors"
 	"github.com/styltsou/url-shortener/server/pkg/logger"
@@ -25,25 +26,46 @@ const (
 	cacheKeyPrefix = "link:"
 	// Cache TTL: 24 hours
 	cacheTTL = 24 * time.Hour
+
+	// Length of auto-generated shortcodes
+	defaultCodeLen = 7
 )
 
-func generateRandomCode(n int) (string, error) {
-	codeAlphabet := []byte("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
+// base62Alphabet contains the characters used for shortcode generation.
+// Using lowercase + uppercase + digits gives 62 possible characters per position.
+const base62Alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 
-	b := make([]byte, n)
-
-	for i := range n {
-		// crypto/rand for unpredictability; map to alphabet via modulo bias-free method
-		// Use rand.Int with max = len(alphabet)
-		idxBig, err := rand.Int(rand.Reader, big.NewInt(int64(len(codeAlphabet))))
-		if err != nil {
-			return "", err
-		}
-
-		b[i] = codeAlphabet[idxBig.Int64()]
+// generateCode creates a deterministic shortcode from a URL and user ID.
+// Uses SHA-256 as a content hash, then encodes the first 8 bytes as base62.
+// Same inputs always produce the same shortcode (deterministic deduplication).
+func generateCode(originalURL, userID string) string {
+	h := sha256.Sum256([]byte(originalURL + "|" + userID))
+	// Use first 8 bytes of the hash (64 bits) as a large number
+	num := binary.BigEndian.Uint64(h[:8])
+	// Base62 encode the number
+	code := base62EncodeUint64(num)
+	// Pad to ensure consistent length
+	for len(code) < defaultCodeLen {
+		code = string(base62Alphabet[0]) + code
 	}
+	return code[:defaultCodeLen]
+}
 
-	return string(b), nil
+// base62EncodeUint64 converts a uint64 to a base62 string.
+func base62EncodeUint64(num uint64) string {
+	if num == 0 {
+		return string(base62Alphabet[0])
+	}
+	var chars []byte
+	for num > 0 {
+		chars = append(chars, base62Alphabet[num%62])
+		num /= 62
+	}
+	// Reverse the chars
+	for i, j := 0, len(chars)-1; i < j; i, j = i+1, j-1 {
+		chars[i], chars[j] = chars[j], chars[i]
+	}
+	return string(chars)
 }
 
 type LinkQueries interface {
@@ -61,16 +83,18 @@ type LinkQueries interface {
 }
 
 type LinkService struct {
-	queries LinkQueries
-	cache   *redis.Client
-	logger  logger.Logger
+	queries          LinkQueries
+	cache            *redis.Client
+	analyticsClient  *analytics.Client
+	logger           logger.Logger
 }
 
-func NewLinkService(queries LinkQueries, cache *redis.Client, logger logger.Logger) *LinkService {
+func NewLinkService(queries LinkQueries, cache *redis.Client, analyticsClient *analytics.Client, logger logger.Logger) *LinkService {
 	return &LinkService{
-		queries: queries,
-		cache:   cache,
-		logger:  logger,
+		queries:         queries,
+		cache:           cache,
+		analyticsClient: analyticsClient,
+		logger:          logger,
 	}
 }
 
@@ -128,44 +152,28 @@ func (s *LinkService) CreateShortLink(
 			fmt.Errorf("failed to create link: %w", err)
 	}
 
-	// Auto-generate shortcode with retry logic
-	const (
-		codeLen     = 9
-		maxAttempts = 3 // 62^9 = 13.5Q combinations; collisions are extremely rare
-	)
+	// Auto-generate deterministic shortcode based on URL + userID
+	code := generateCode(originalURL, userID)
+	link, err := s.queries.TryCreateLink(ctx, db.TryCreateLinkParams{
+		Shortcode:   code,
+		OriginalUrl: originalURL,
+		UserID:      userID,
+		ExpiresAt:   expiresAtTimestamp,
+	})
 
-	for range maxAttempts {
-		code, err := generateRandomCode(codeLen)
-		if err != nil {
-			return db.TryCreateLinkRow{},
-				fmt.Errorf("failed to generate short code: %w", err)
-		}
-
-		link, err := s.queries.TryCreateLink(ctx, db.TryCreateLinkParams{
-			Shortcode:   code,
-			OriginalUrl: originalURL,
-			UserID:      userID,
-			ExpiresAt:   expiresAtTimestamp,
-		})
-
-		if err == nil {
-			return link, nil
-		}
-
-		// Collision: ON CONFLICT DO NOTHING returned no rows
-		// Note: This is the ONLY way sql.ErrNoRows can occur here,
-		// since successful inserts always return a row
+	if err != nil {
+		// Collision: ON CONFLICT DO NOTHING returned no rows.
+		// This is astronomically unlikely with SHA-256 + base62(7) → 3.5T combinations.
 		if errors.Is(err, sql.ErrNoRows) {
-			continue // Generate new code and retry
+			return db.TryCreateLinkRow{},
+				fmt.Errorf("collision after inserting code %s: %w", code, err)
 		}
 
-		// Other database error - wrap with context
 		return db.TryCreateLinkRow{},
 			fmt.Errorf("failed to create link: %w", err)
 	}
 
-	return db.TryCreateLinkRow{},
-		fmt.Errorf("failed to create link after %d attempts: %w", maxAttempts, fmt.Errorf("code collision retry limit exceeded"))
+	return link, nil
 }
 
 // validateURL validates that the URL is well-formed and uses http/https
@@ -348,6 +356,49 @@ func (s *LinkService) GetOriginalURL(ctx context.Context, code string) (db.GetLi
 	return link, nil
 }
 
+// RecordClick records a click event for analytics
+func (s *LinkService) RecordClick(ctx context.Context, linkID uuid.UUID, ip, userAgent, referrer string) {
+	if s.analyticsClient == nil {
+		return
+	}
+
+	s.analyticsClient.RecordClick(ctx, analytics.ClickEvent{
+		LinkID:    linkID,
+		Timestamp: time.Now(),
+		IP:        ip,
+		UserAgent: userAgent,
+		Referrer:  referrer,
+	})
+}
+
+// GetLinkAnalytics returns analytics data for a link
+func (s *LinkService) GetLinkAnalytics(ctx context.Context, userID string, shortcode string) (*analytics.LinkAnalytics, error) {
+	link, err := s.queries.GetLinkByShortcodeAndUser(ctx, db.GetLinkByShortcodeAndUserParams{
+		Shortcode: shortcode,
+		UserID:    userID,
+	})
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, fmt.Errorf("%w: %v", apperrors.LinkNotFound, err)
+		}
+		return nil, fmt.Errorf("failed to get link: %w", err)
+	}
+
+	if s.analyticsClient == nil {
+		return &analytics.LinkAnalytics{}, nil
+	}
+
+	until := time.Now()
+	since := until.AddDate(0, 0, -30)
+
+	result, err := s.analyticsClient.GetLinkAnalytics(ctx, link.ID, since, until)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get analytics: %w", err)
+	}
+
+	return result, nil
+}
+
 func (s *LinkService) UpdateLink(
 	ctx context.Context,
 	userID string,
@@ -356,6 +407,21 @@ func (s *LinkService) UpdateLink(
 	isActive *bool,
 	expiresAt *time.Time,
 ) (db.UpdateLinkRow, error) {
+
+	// Fetch the existing link to get the old shortcode for cache invalidation
+	existingLink, err := s.queries.GetLinkByIdAndUser(ctx, db.GetLinkByIdAndUserParams{
+		ID:     id,
+		UserID: userID,
+	})
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return db.UpdateLinkRow{},
+				fmt.Errorf("%w: %v", apperrors.LinkNotFound, err)
+		}
+		return db.UpdateLinkRow{},
+			fmt.Errorf("failed to get link for update: %w", err)
+	}
+	oldShortcode := existingLink.Shortcode
 
 	var expiresAtTimestamp pgtype.Timestamp
 	if expiresAt != nil {
@@ -383,11 +449,6 @@ func (s *LinkService) UpdateLink(
 
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
-			// NOTE: When is_alias field is added, differentiate between:
-			// - Custom alias conflicts: Return error to user (current behavior - correct)
-			// - Auto-generated conflicts: Should retry internally (not applicable for updates)
-			// For now, all conflicts are treated as user-provided custom aliases
-
 			shortcodeStr := "n/a"
 			if shortcode != nil {
 				shortcodeStr = *shortcode
@@ -401,9 +462,8 @@ func (s *LinkService) UpdateLink(
 			fmt.Errorf("failed to update link: %w", err)
 	}
 
-	// Invalidate cache after successful update
-	// Note: If shortcode changed, the old cache entry will expire naturally
-	// We invalidate using the new shortcode to ensure fresh data
+	// Invalidate cache for both old and new shortcodes
+	s.invalidateCache(ctx, oldShortcode)
 	s.invalidateCache(ctx, updatedLink.Shortcode)
 
 	return updatedLink, nil

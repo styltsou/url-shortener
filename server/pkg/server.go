@@ -12,6 +12,7 @@ import (
 	"github.com/go-chi/cors"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
+	"github.com/styltsou/url-shortener/server/pkg/analytics"
 	"github.com/styltsou/url-shortener/server/pkg/config"
 	"github.com/styltsou/url-shortener/server/pkg/db"
 	"github.com/styltsou/url-shortener/server/pkg/handlers"
@@ -24,11 +25,12 @@ import (
 
 // Server encapsulates the HTTP server, router, database pool, and context
 type Server struct {
-	Context     context.Context
-	Pool        *pgxpool.Pool
-	RedisClient *redis.Client
-	Router      *chi.Mux
-	Logger      logger.Logger
+	Context          context.Context
+	Pool             *pgxpool.Pool
+	RedisClient      *redis.Client
+	AnalyticsClient  *analytics.Client
+	Router           *chi.Mux
+	Logger           logger.Logger
 }
 
 // New creates and initializes a new Server instance
@@ -84,7 +86,14 @@ func New(config *config.Config, log logger.Logger) (*Server, error) {
 	}
 
 	queries := db.New(s.Pool)
-	linkSvc := service.NewLinkService(queries, s.RedisClient, s.Logger)
+
+	s.AnalyticsClient, _ = analytics.New(s.Context, analytics.Config{
+		URL:      config.ClickhouseURL,
+		Username: config.ClickhouseUsername,
+		Password: config.ClickhousePassword,
+	}, s.Logger)
+
+	linkSvc := service.NewLinkService(queries, s.RedisClient, s.AnalyticsClient, s.Logger)
 	linkHandler := handlers.NewLinkHandler(linkSvc, s.Logger)
 
 	tagSvc := service.NewTagService(queries, s.Logger)
@@ -116,6 +125,14 @@ func (s *Server) CloseConnections() {
 	if s.RedisClient != nil {
 		if err := s.RedisClient.Close(); err != nil {
 			s.Logger.Error("Error closing Redis pool",
+				zap.Error(err),
+			)
+		}
+	}
+
+	if s.AnalyticsClient != nil {
+		if err := s.AnalyticsClient.Close(); err != nil {
+			s.Logger.Error("Error closing ClickHouse connection",
 				zap.Error(err),
 			)
 		}

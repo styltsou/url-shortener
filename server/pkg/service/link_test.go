@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -278,69 +279,79 @@ func TestValidateURL(t *testing.T) {
 	}
 }
 
-func TestGenerateRandomCode(t *testing.T) {
-	tests := []struct {
-		name    string
-		length  int
-		wantErr bool
-	}{
-		{
-			name:    "generate code of length 9",
-			length:  9,
-			wantErr: false,
-		},
-		{
-			name:    "generate code of length 1",
-			length:  1,
-			wantErr: false,
-		},
-		{
-			name:    "generate code of length 20",
-			length:  20,
-			wantErr: false,
-		},
-	}
+func TestGenerateCode(t *testing.T) {
+	t.Run("generates consistent length", func(t *testing.T) {
+		code := generateCode("https://example.com", "user_123")
+		if len(code) != defaultCodeLen {
+			t.Errorf("generateCode() length = %d, want %d", len(code), defaultCodeLen)
+		}
+	})
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			code, err := generateRandomCode(tt.length)
-			if tt.wantErr {
-				if err == nil {
-					t.Errorf("generateRandomCode() expected error but got nil")
-				}
-				return
-			}
-			if err != nil {
-				t.Errorf("generateRandomCode() unexpected error = %v", err)
-				return
-			}
-			if len(code) != tt.length {
-				t.Errorf("generateRandomCode() length = %d, want %d", len(code), tt.length)
-			}
-			// Verify all characters are in the alphabet
-			alphabet := "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-			for i := 0; i < len(code); i++ {
-				if !contains(alphabet, code[i]) {
-					t.Errorf("generateRandomCode() contains invalid character: %c", code[i])
-				}
-			}
-		})
-	}
+	t.Run("deterministic for same inputs", func(t *testing.T) {
+		url := "https://example.com"
+		user := "user_123"
+		code1 := generateCode(url, user)
+		code2 := generateCode(url, user)
+		if code1 != code2 {
+			t.Errorf("generateCode() should be deterministic: %s != %s", code1, code2)
+		}
+	})
 
-	// Test uniqueness (very unlikely to collide with 62^9 combinations)
-	t.Run("codes are unique", func(t *testing.T) {
+	t.Run("different for different URLs", func(t *testing.T) {
+		code1 := generateCode("https://example.com/a", "user_123")
+		code2 := generateCode("https://example.com/b", "user_123")
+		if code1 == code2 {
+			t.Errorf("generateCode() should differ for different URLs: %s", code1)
+		}
+	})
+
+	t.Run("different for different users", func(t *testing.T) {
+		code1 := generateCode("https://example.com", "user_a")
+		code2 := generateCode("https://example.com", "user_b")
+		if code1 == code2 {
+			t.Errorf("generateCode() should differ for different users: %s", code1)
+		}
+	})
+
+	t.Run("contains only base62 characters", func(t *testing.T) {
+		code := generateCode("https://example.com", "user_123")
+		for i := 0; i < len(code); i++ {
+			if !contains(base62Alphabet, code[i]) {
+				t.Errorf("generateCode() contains invalid character: %c at position %d", code[i], i)
+			}
+		}
+	})
+
+	t.Run("no collisions in 1000 generations", func(t *testing.T) {
 		codes := make(map[string]bool)
-		for i := 0; i < 100; i++ {
-			code, err := generateRandomCode(9)
-			if err != nil {
-				t.Fatalf("generateRandomCode() error = %v", err)
-			}
+		for i := 0; i < 1000; i++ {
+			url := fmt.Sprintf("https://example.com/page?q=%d", i)
+			code := generateCode(url, "user_123")
 			if codes[code] {
-				t.Errorf("generateRandomCode() generated duplicate code: %s", code)
+				t.Errorf("generateCode() collision at iteration %d: %s", i, code)
 			}
 			codes[code] = true
 		}
 	})
+}
+
+func TestBase62EncodeUint64(t *testing.T) {
+	tests := []struct {
+		input uint64
+		want  string
+	}{
+		{0, "a"},
+		{1, "b"},
+		{61, "9"},
+		{62, "ba"},
+	}
+
+	for _, tt := range tests {
+		got := base62EncodeUint64(tt.input)
+		if got != tt.want {
+			t.Errorf("base62EncodeUint64(%d) = %s, want %s", tt.input, got, tt.want)
+		}
+	}
 }
 
 func contains(s string, char byte) bool {
@@ -371,8 +382,8 @@ func TestLinkService_CreateShortLink(t *testing.T) {
 				if arg.UserID != userID {
 					t.Errorf("TryCreateLink called with wrong UserID: got %s, want %s", arg.UserID, userID)
 				}
-				if len(arg.Shortcode) != 9 {
-					t.Errorf("TryCreateLink called with wrong shortcode length: got %d, want 9", len(arg.Shortcode))
+				if len(arg.Shortcode) != defaultCodeLen {
+					t.Errorf("TryCreateLink called with wrong shortcode length: got %d, want %d", len(arg.Shortcode), defaultCodeLen)
 				}
 				return createTestTryCreateLinkRow(uuid.New(), arg.Shortcode, arg.OriginalUrl, arg.UserID), nil
 			},
@@ -390,8 +401,8 @@ func TestLinkService_CreateShortLink(t *testing.T) {
 		if link.OriginalUrl != originalURL {
 			t.Errorf("CreateShortLink() OriginalUrl = %s, want %s", link.OriginalUrl, originalURL)
 		}
-		if len(link.Shortcode) != 9 {
-			t.Errorf("CreateShortLink() Shortcode length = %d, want 9", len(link.Shortcode))
+		if len(link.Shortcode) != defaultCodeLen {
+			t.Errorf("CreateShortLink() Shortcode length = %d, want %d", len(link.Shortcode), defaultCodeLen)
 		}
 	})
 
@@ -410,41 +421,9 @@ func TestLinkService_CreateShortLink(t *testing.T) {
 		}
 	})
 
-	t.Run("handles code collision and retries", func(t *testing.T) {
-		attempts := 0
+	t.Run("code collision returns error", func(t *testing.T) {
 		mockQueries := &mockQueries{
 			TryCreateLinkFunc: func(ctx context.Context, arg db.TryCreateLinkParams) (db.TryCreateLinkRow, error) {
-				attempts++
-				if attempts < 2 {
-					// Simulate collision on first attempt
-					return db.TryCreateLinkRow{}, sql.ErrNoRows
-				}
-				// Success on second attempt
-				return createTestTryCreateLinkRow(uuid.New(), arg.Shortcode, arg.OriginalUrl, arg.UserID), nil
-			},
-		}
-
-		service := &LinkService{
-			queries: mockQueries,
-			logger:  createTestLogger(),
-		}
-		link, err := service.CreateShortLink(ctx, userID, originalURL, nil, nil)
-
-		if err != nil {
-			t.Errorf("CreateShortLink() error = %v, want nil", err)
-		}
-		if link.OriginalUrl != originalURL {
-			t.Errorf("CreateShortLink() OriginalUrl = %s, want %s", link.OriginalUrl, originalURL)
-		}
-		if attempts != 2 {
-			t.Errorf("CreateShortLink() attempts = %d, want 2", attempts)
-		}
-	})
-
-	t.Run("fails after max retries", func(t *testing.T) {
-		mockQueries := &mockQueries{
-			TryCreateLinkFunc: func(ctx context.Context, arg db.TryCreateLinkParams) (db.TryCreateLinkRow, error) {
-				// Always return collision
 				return db.TryCreateLinkRow{}, sql.ErrNoRows
 			},
 		}
@@ -456,7 +435,7 @@ func TestLinkService_CreateShortLink(t *testing.T) {
 		_, err := service.CreateShortLink(ctx, userID, originalURL, nil, nil)
 
 		if err == nil {
-			t.Errorf("CreateShortLink() expected error after max retries")
+			t.Errorf("CreateShortLink() expected error for code collision")
 		}
 	})
 
@@ -1140,6 +1119,9 @@ func TestLinkService_UpdateLink(t *testing.T) {
 		expectedRow := createTestUpdateLinkRow(linkID, newShortcode, originalURL, true)
 
 		mockQueries := &mockQueries{
+			GetLinkByIdAndUserFunc: func(ctx context.Context, arg db.GetLinkByIdAndUserParams) (db.GetLinkByIdAndUserRow, error) {
+				return createTestGetLinkByIdAndUserRow(linkID, "oldcode", originalURL, userID), nil
+			},
 			UpdateLinkFunc: func(ctx context.Context, arg db.UpdateLinkParams) (db.UpdateLinkRow, error) {
 				if arg.ID != linkID {
 					t.Errorf("UpdateLink called with wrong ID: got %s, want %s", arg.ID, linkID)
@@ -1181,6 +1163,9 @@ func TestLinkService_UpdateLink(t *testing.T) {
 		expectedRow := createTestUpdateLinkRow(linkID, "oldcode", originalURL, false)
 
 		mockQueries := &mockQueries{
+			GetLinkByIdAndUserFunc: func(ctx context.Context, arg db.GetLinkByIdAndUserParams) (db.GetLinkByIdAndUserRow, error) {
+				return createTestGetLinkByIdAndUserRow(linkID, "oldcode", originalURL, userID), nil
+			},
 			UpdateLinkFunc: func(ctx context.Context, arg db.UpdateLinkParams) (db.UpdateLinkRow, error) {
 				if arg.IsActive == nil || *arg.IsActive != false {
 					t.Errorf("UpdateLink called with wrong IsActive: got %v, want false", arg.IsActive)
@@ -1212,6 +1197,9 @@ func TestLinkService_UpdateLink(t *testing.T) {
 		expectedRow.ExpiresAt = pgtype.Timestamp{Time: futureTime, Valid: true}
 
 		mockQueries := &mockQueries{
+			GetLinkByIdAndUserFunc: func(ctx context.Context, arg db.GetLinkByIdAndUserParams) (db.GetLinkByIdAndUserRow, error) {
+				return createTestGetLinkByIdAndUserRow(linkID, "oldcode", originalURL, userID), nil
+			},
 			UpdateLinkFunc: func(ctx context.Context, arg db.UpdateLinkParams) (db.UpdateLinkRow, error) {
 				if !arg.ExpiresAt.Valid || !arg.ExpiresAt.Time.Equal(futureTime) {
 					t.Errorf("UpdateLink called with wrong ExpiresAt: got %v, want %v", arg.ExpiresAt, futureTime)
@@ -1244,6 +1232,9 @@ func TestLinkService_UpdateLink(t *testing.T) {
 		expectedRow.ExpiresAt = pgtype.Timestamp{Time: futureTime, Valid: true}
 
 		mockQueries := &mockQueries{
+			GetLinkByIdAndUserFunc: func(ctx context.Context, arg db.GetLinkByIdAndUserParams) (db.GetLinkByIdAndUserRow, error) {
+				return createTestGetLinkByIdAndUserRow(linkID, "oldcode", originalURL, userID), nil
+			},
 			UpdateLinkFunc: func(ctx context.Context, arg db.UpdateLinkParams) (db.UpdateLinkRow, error) {
 				if arg.Shortcode == nil || *arg.Shortcode != newShortcode {
 					t.Errorf("UpdateLink called with wrong shortcode")
@@ -1274,10 +1265,36 @@ func TestLinkService_UpdateLink(t *testing.T) {
 		}
 	})
 
-	t.Run("link not found", func(t *testing.T) {
+	t.Run("link not found on update", func(t *testing.T) {
 		mockQueries := &mockQueries{
+			GetLinkByIdAndUserFunc: func(ctx context.Context, arg db.GetLinkByIdAndUserParams) (db.GetLinkByIdAndUserRow, error) {
+				return createTestGetLinkByIdAndUserRow(linkID, "oldcode", originalURL, userID), nil
+			},
 			UpdateLinkFunc: func(ctx context.Context, arg db.UpdateLinkParams) (db.UpdateLinkRow, error) {
 				return db.UpdateLinkRow{}, sql.ErrNoRows
+			},
+		}
+
+		service := &LinkService{
+			queries: mockQueries,
+			logger:  createTestLogger(),
+		}
+
+		shortcodePtr := &newShortcode
+		_, err := service.UpdateLink(ctx, userID, linkID, shortcodePtr, nil, nil)
+
+		if err == nil {
+			t.Errorf("UpdateLink() expected error for not found")
+		}
+		if !errors.Is(err, apperrors.LinkNotFound) {
+			t.Errorf("UpdateLink() error = %v, want %v", err, apperrors.LinkNotFound)
+		}
+	})
+
+	t.Run("link not found on fetch before update", func(t *testing.T) {
+		mockQueries := &mockQueries{
+			GetLinkByIdAndUserFunc: func(ctx context.Context, arg db.GetLinkByIdAndUserParams) (db.GetLinkByIdAndUserRow, error) {
+				return db.GetLinkByIdAndUserRow{}, sql.ErrNoRows
 			},
 		}
 
@@ -1303,6 +1320,9 @@ func TestLinkService_UpdateLink(t *testing.T) {
 		}
 
 		mockQueries := &mockQueries{
+			GetLinkByIdAndUserFunc: func(ctx context.Context, arg db.GetLinkByIdAndUserParams) (db.GetLinkByIdAndUserRow, error) {
+				return createTestGetLinkByIdAndUserRow(linkID, "oldcode", originalURL, userID), nil
+			},
 			UpdateLinkFunc: func(ctx context.Context, arg db.UpdateLinkParams) (db.UpdateLinkRow, error) {
 				return db.UpdateLinkRow{}, pgErr
 			},
@@ -1328,6 +1348,9 @@ func TestLinkService_UpdateLink(t *testing.T) {
 		dbError := errors.New("database connection failed")
 
 		mockQueries := &mockQueries{
+			GetLinkByIdAndUserFunc: func(ctx context.Context, arg db.GetLinkByIdAndUserParams) (db.GetLinkByIdAndUserRow, error) {
+				return createTestGetLinkByIdAndUserRow(linkID, "oldcode", originalURL, userID), nil
+			},
 			UpdateLinkFunc: func(ctx context.Context, arg db.UpdateLinkParams) (db.UpdateLinkRow, error) {
 				return db.UpdateLinkRow{}, dbError
 			},
@@ -1353,6 +1376,9 @@ func TestLinkService_UpdateLink(t *testing.T) {
 		expectedRow := createTestUpdateLinkRow(linkID, "oldcode", originalURL, true)
 
 		mockQueries := &mockQueries{
+			GetLinkByIdAndUserFunc: func(ctx context.Context, arg db.GetLinkByIdAndUserParams) (db.GetLinkByIdAndUserRow, error) {
+				return createTestGetLinkByIdAndUserRow(linkID, "oldcode", originalURL, userID), nil
+			},
 			UpdateLinkFunc: func(ctx context.Context, arg db.UpdateLinkParams) (db.UpdateLinkRow, error) {
 				if arg.ExpiresAt.Valid {
 					t.Errorf("UpdateLink should pass invalid ExpiresAt when nil pointer provided")

@@ -1,4 +1,4 @@
-import { MoreVertical as MoreVerticalIcon } from "lucide-react";
+import { MoreVertical as MoreVerticalIcon, Inbox } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getReferrerIcon } from "@/lib/referrers";
 
@@ -7,7 +7,25 @@ interface TopSourcesCardProps {
 }
 
 export function TopSourcesCard({ referrers }: TopSourcesCardProps) {
-	const maxClicks = Math.max(...referrers.map((d) => d.clicks));
+	const maxClicks = referrers.length > 0 ? Math.max(...referrers.map((d) => d.clicks)) : 0;
+
+	if (referrers.length === 0) {
+		return (
+			<Card className='h-full flex flex-col'>
+				<CardHeader>
+					<CardTitle className='text-sm font-semibold uppercase tracking-wider text-muted-foreground'>
+						Top Sources
+					</CardTitle>
+				</CardHeader>
+				<CardContent className='flex-1 flex items-center justify-center'>
+					<div className='text-center text-muted-foreground'>
+						<Inbox className='w-8 h-8 mx-auto mb-2' />
+						<p className='text-sm'>No data yet</p>
+					</div>
+				</CardContent>
+			</Card>
+		);
+	}
 
 	return (
 		<Card className='h-full flex flex-col'>

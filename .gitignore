@@ -1,3 +1,11 @@
+# Environment files
+.env
+client/.env
+server/.env
+
+# Build artifacts
+server/bin/
+
 # Guides directory (learning materials, not part of the project)
 guides/
 

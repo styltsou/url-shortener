@@ -11,17 +11,13 @@ import (
 	"github.com/spf13/viper"
 )
 
-// TODO: What happens for omit empty??
-// TODO: Handle prod vs dev
-// What about logging here??
-
 type Config struct {
 	AppEnv                   string   `mapstructure:"APP_ENV" validate:"omitempty"`
 	Port                     int      `mapstructure:"PORT" validate:"min=1,max=65535"`
 	PostgresConnectionString string   `mapstructure:"POSTGRES_CONNECTION_STRING" validate:"required"`
-	ClickhouseURL            string   `mapstructure:"CLICKHOUSE_URL" validate:"required"`
-	ClickhouseUsername       string   `mapstructure:"CLICKHOUSE_USERNAME" validate:"required"`
-	ClickhousePassword       string   `mapstructure:"CLICKHOUSE_PASSWORD" validate:"required"`
+	ClickhouseURL            string   `mapstructure:"CLICKHOUSE_URL"`
+	ClickhouseUsername       string   `mapstructure:"CLICKHOUSE_USERNAME"`
+	ClickhousePassword       string   `mapstructure:"CLICKHOUSE_PASSWORD"`
 	RedisURL                 string   `mapstructure:"REDIS_URL" validate:"required"`
 	RedisUsername            string   `mapstructure:"REDIS_USERNAME" validate:"required"`
 	RedisPassword            string   `mapstructure:"REDIS_PASSWORD" validate:"required"`
@@ -126,15 +122,20 @@ func Load() (*Config, error) {
 	v.SetDefault("REDIS_WRITE_TIMEOUT", 3)
 	v.SetDefault("REDIS_MAX_RETRIES", 3)
 
-	// If running in a container use v.AutomaticEnv() to get platform's env vars
+	// Read .env file if it exists; fallback to environment variables in containers
 	v.SetConfigName(".env")
 	v.SetConfigType("env")
 	v.AddConfigPath("./")
+	v.AutomaticEnv()
 
 	cfg = &Config{}
 
 	if err := v.ReadInConfig(); err != nil {
-		return cfg, fmt.Errorf(".env file not found: %w", err)
+		if _, ok := err.(viper.ConfigFileNotFoundError); ok {
+			// No .env file found; rely on environment variables
+		} else {
+			return cfg, fmt.Errorf("error reading .env file: %w", err)
+		}
 	}
 
 	if err := v.Unmarshal(cfg); err != nil {

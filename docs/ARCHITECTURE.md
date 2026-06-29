@@ -68,7 +68,7 @@ Our backend follows a **layered architecture** with clear separation of concerns
 
 4. Service (pkg/service/link.go)
    - Validates URL format
-   - Generates random short code
+   - Generates deterministic 7-char shortcode via SHA-256(url + userID) + base62
    - Calls repository: queries.TryCreateLink(...)
    - Handles collisions (retries with new code)
    - Returns db.Link or error

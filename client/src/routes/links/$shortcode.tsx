@@ -3,10 +3,12 @@ import { useAuth } from "@clerk/clerk-react";
 import { Navigate } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
 import { useLinks } from "@/hooks/use-links";
+import { useAnalytics } from "@/hooks/use-analytics";
 import { processReferrersData } from "@/lib/referrers";
 import { LinkHeader } from "@/components/link/link-header";
 import { LinkActions } from "@/components/link/link-actions";
 import { LinkDetailsCard } from "@/components/link/link-details-card";
+import { LinkQRCode } from "@/components/link/link-qrcode";
 import { PerformanceChartCard } from "@/components/link/performance-chart-card";
 import { TotalClicksCard } from "@/components/link/total-clicks-card";
 import { TopSourcesCard } from "@/components/link/top-sources-card";
@@ -22,15 +24,19 @@ function LinkDetailPage() {
 	const navigate = useNavigate();
 	const { isSignedIn, isLoaded } = useAuth();
 	const { data: linksData, isLoading: isLoadingLinks } = useLinks();
+	const { data: analyticsData, isLoading: isLoadingAnalytics } = useAnalytics(shortcode);
 	const urls = linksData?.urls ?? [];
 
 	const url = urls.find((u) => u.shortCode === shortcode);
 
-	// Process referrers data to merge unknown sources into "Other"
-	// React Compiler automatically memoizes this computation
-	const processedReferrers = !url
-		? []
-		: processReferrersData(url.analytics.referrers_data || []);
+	const clicksData = (analyticsData?.clicks_over_time ?? []).map((d) => ({
+		name: new Date(d.date).toLocaleDateString("en-US", { weekday: "short" }),
+		clicks: d.clicks,
+	}));
+
+	const referrersData = analyticsData?.top_referrers ?? [];
+
+	const processedReferrers = processReferrersData(referrersData);
 
 	if (!isLoaded) {
 		return <LoadingState />;
@@ -78,16 +84,21 @@ function LinkDetailPage() {
 				</div>
 
 				<div className='grid grid-cols-1 lg:grid-cols-3 gap-6'>
-					{/* Main Content */}
 					<div className='lg:col-span-2 space-y-6'>
 						<LinkDetailsCard url={url} />
-						<PerformanceChartCard url={url} />
+						<PerformanceChartCard
+							clicksData={clicksData}
+							isLoading={isLoadingAnalytics}
+						/>
 					</div>
 
-					{/* Sidebar Stats */}
-					<div className='grid grid-cols-2 lg:grid-cols-1 lg:grid-rows-[auto_1fr] gap-6'>
-						<TotalClicksCard clicks={url.clicks} />
+					<div className='grid grid-cols-2 lg:grid-cols-1 gap-6'>
+						<TotalClicksCard
+							clicks={analyticsData?.total_clicks ?? url.clicks}
+							isLoading={isLoadingAnalytics}
+						/>
 						<TopSourcesCard referrers={processedReferrers} />
+						<LinkQRCode shortcode={shortcode} />
 					</div>
 				</div>
 			</div>

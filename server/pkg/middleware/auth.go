@@ -96,21 +96,4 @@ func WithUserID(ctx context.Context, userID string) context.Context {
 	return context.WithValue(ctx, userIDKey, userID)
 }
 
-// TODO: Remove this before production - development/testing only
-// BypassAuth bypasses authentication and sets a hardcoded user ID
-func BypassAuth(log logger.Logger) func(http.Handler) http.Handler {
-	hardcodedUserID := "user_366ZknQKbx4AgH2ZRywsYF8zGFY"
 
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			log.Warn("⚠️  AUTH BYPASSED - Development mode only",
-				zap.String("user_id", hardcodedUserID),
-				zap.String("method", r.Method),
-				zap.String("path", r.URL.Path),
-			)
-
-			ctx := context.WithValue(r.Context(), userIDKey, hardcodedUserID)
-			next.ServeHTTP(w, r.WithContext(ctx))
-		})
-	}
-}

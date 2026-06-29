@@ -13,6 +13,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/styltsou/url-shortener/server/pkg/analytics"
 	"github.com/styltsou/url-shortener/server/pkg/db"
 	"github.com/styltsou/url-shortener/server/pkg/dto"
 	apperrors "github.com/styltsou/url-shortener/server/pkg/errors"
@@ -31,6 +32,8 @@ type mockLinkService struct {
 	DeleteLinkFunc         func(ctx context.Context, userID string, id uuid.UUID) (db.DeleteLinkRow, error)
 	AddTagsToLinkFunc      func(ctx context.Context, userID string, linkID uuid.UUID, tagIDs []uuid.UUID) (db.GetLinkByIdAndUserWithTagsRow, error)
 	RemoveTagsFromLinkFunc func(ctx context.Context, userID string, linkID uuid.UUID, tagIDs []uuid.UUID) (db.GetLinkByIdAndUserWithTagsRow, error)
+	RecordClickFunc        func(ctx context.Context, linkID uuid.UUID, ip, userAgent, referrer string)
+	GetLinkAnalyticsFunc   func(ctx context.Context, userID string, shortcode string) (*analytics.LinkAnalytics, error)
 }
 
 func (m *mockLinkService) CreateShortLink(ctx context.Context, userID string, originalURL string, customShortcode *string, expiresAt *time.Time) (db.TryCreateLinkRow, error) {
@@ -87,6 +90,19 @@ func (m *mockLinkService) RemoveTagsFromLink(ctx context.Context, userID string,
 		return m.RemoveTagsFromLinkFunc(ctx, userID, linkID, tagIDs)
 	}
 	return db.GetLinkByIdAndUserWithTagsRow{}, errors.New("not implemented")
+}
+
+func (m *mockLinkService) RecordClick(ctx context.Context, linkID uuid.UUID, ip, userAgent, referrer string) {
+	if m.RecordClickFunc != nil {
+		m.RecordClickFunc(ctx, linkID, ip, userAgent, referrer)
+	}
+}
+
+func (m *mockLinkService) GetLinkAnalytics(ctx context.Context, userID string, shortcode string) (*analytics.LinkAnalytics, error) {
+	if m.GetLinkAnalyticsFunc != nil {
+		return m.GetLinkAnalyticsFunc(ctx, userID, shortcode)
+	}
+	return &analytics.LinkAnalytics{}, nil
 }
 
 func createTestLogger() logger.Logger {

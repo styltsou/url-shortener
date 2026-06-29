@@ -52,12 +52,11 @@ export interface PaginatedResponse<T> {
 	pagination: PaginationMeta;
 }
 
-import { generateMockAnalytics } from "@/lib/mock-data";
 import type { Url } from "./url";
 
 // Convert API Link to app Url type
 export function linkToUrl(link: Link): Url {
-	const url: Url = {
+	return {
 		id: link.id,
 		originalUrl: link.original_url,
 		shortCode: link.shortcode,
@@ -68,21 +67,7 @@ export function linkToUrl(link: Link): Url {
 			link.tags?.map((tag) => ({
 				id: tag.id,
 				name: tag.name,
-			})) || [], // Handle missing tags (e.g., from create response)
-		analytics: {
-			clicks_data: [], // TODO: Fetch from analytics endpoint when available
-			referrers_data: [], // TODO: Fetch from analytics endpoint when available
-		},
-		isActive: link.is_active !== false, // Default to true if not set
+			})) || [],
+		isActive: link.is_active !== false,
 	};
-
-	// Generate mock analytics if backend doesn't provide them
-	if (
-		url.analytics.clicks_data.length === 0 &&
-		url.analytics.referrers_data.length === 0
-	) {
-		url.analytics = generateMockAnalytics(url, "7days");
-	}
-
-	return url;
 }

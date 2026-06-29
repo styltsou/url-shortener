@@ -37,7 +37,7 @@ func New(linkH *handlers.LinkHandler, tagH *handlers.TagHandler, logger logger.L
 	r.Get("/api/v1/reference", func(w http.ResponseWriter, r *http.Request) {
 		htmlContent, err := scalar.ApiReferenceHTML(&scalar.Options{
 			// SpecURL: "https://generator3.swagger.io/openapi.json",
-			SpecURL: "./docs/openapi.yaml",
+			SpecURL: "../docs/openapi/openapi.yaml",
 			CustomOptions: scalar.CustomOptions{
 				PageTitle: "URL Shortener API",
 			},
@@ -74,6 +74,8 @@ func New(linkH *handlers.LinkHandler, tagH *handlers.TagHandler, logger logger.L
 			r.With(mw.RequestValidator[dto.CreateLink](logger)).Post("/", linkH.CreateLink)
 			r.Get("/", linkH.ListLinks)
 			r.Get("/{shortcode}", linkH.GetLink)
+			r.Get("/{shortcode}/analytics", linkH.GetLinkAnalytics)
+			r.Get("/{shortcode}/qrcode", linkH.GetQRCode)
 			r.With(mw.RequestValidator[dto.UpdateLink](logger)).Patch("/{id}", linkH.UpdateLink)
 			r.Delete("/{id}", linkH.DeleteLink)
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -12,6 +13,8 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/render"
 	"github.com/google/uuid"
+	"github.com/skip2/go-qrcode"
+	"github.com/styltsou/url-shortener/server/pkg/analytics"
 	"github.com/styltsou/url-shortener/server/pkg/db"
 	"github.com/styltsou/url-shortener/server/pkg/dto"
 	apperrors "github.com/styltsou/url-shortener/server/pkg/errors"
@@ -37,6 +40,8 @@ type LinkService interface {
 	DeleteLink(ctx context.Context, userID string, id uuid.UUID) (db.DeleteLinkRow, error)
 	AddTagsToLink(ctx context.Context, userID string, linkID uuid.UUID, tagIDs []uuid.UUID) (db.GetLinkByIdAndUserWithTagsRow, error)
 	RemoveTagsFromLink(ctx context.Context, userID string, linkID uuid.UUID, tagIDs []uuid.UUID) (db.GetLinkByIdAndUserWithTagsRow, error)
+	RecordClick(ctx context.Context, linkID uuid.UUID, ip, userAgent, referrer string)
+	GetLinkAnalytics(ctx context.Context, userID string, shortcode string) (*analytics.LinkAnalytics, error)
 }
 
 type LinkHandler struct {
@@ -75,6 +80,8 @@ func (h *LinkHandler) Redirect(w http.ResponseWriter, r *http.Request) {
 </html>`)
 		return
 	}
+
+	h.LinkService.RecordClick(r.Context(), link.ID, r.RemoteAddr, r.UserAgent(), r.Referer())
 
 	http.Redirect(w, r, link.OriginalUrl, http.StatusFound)
 }
@@ -373,6 +380,64 @@ func (h *LinkHandler) RemoveTagsFromLink(w http.ResponseWriter, r *http.Request)
 	render.Status(r, http.StatusOK)
 	render.JSON(w, r, &dto.SuccessResponse[db.GetLinkByIdAndUserWithTagsRow]{
 		Data: updatedLink,
+	})
+}
+
+// GetQRCode: GET /api/v1/links/{shortcode}/qrcode
+func (h *LinkHandler) GetQRCode(w http.ResponseWriter, r *http.Request) {
+	shortcode := chi.URLParam(r, "shortcode")
+	sizeStr := r.URL.Query().Get("size")
+	size := 256
+	if sizeStr != "" {
+		if s, err := strconv.Atoi(sizeStr); err == nil && s >= 64 && s <= 1024 {
+			size = s
+		}
+	}
+
+	shortURL := fmt.Sprintf("%s/%s", r.Host, shortcode)
+
+	png, err := qrcode.Encode(shortURL, qrcode.Medium, size)
+	if err != nil {
+		h.logger.Error("Failed to generate QR code",
+			zap.Error(err),
+			zap.String("shortcode", shortcode),
+		)
+		render.Status(r, http.StatusInternalServerError)
+		render.JSON(w, r, dto.ErrorResponse{
+			Error: dto.ErrorObject{
+				Code:   apperrors.CodeInternalError,
+				Title:  apperrors.InternalError.Error(),
+				Detail: "Failed to generate QR code",
+			},
+		})
+		return
+	}
+
+	w.Header().Set("Content-Type", "image/png")
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`inline; filename="qr-%s.png"`, shortcode))
+	w.WriteHeader(http.StatusOK)
+	if _, err := w.Write(png); err != nil {
+		h.logger.Error("Failed to write QR code response",
+			zap.Error(err),
+			zap.String("shortcode", shortcode),
+		)
+	}
+}
+
+// GetLinkAnalytics: GET /api/v1/links/{shortcode}/analytics
+func (h *LinkHandler) GetLinkAnalytics(w http.ResponseWriter, r *http.Request) {
+	userID := mw.GetUserIDFromContext(r.Context())
+	shortcode := chi.URLParam(r, "shortcode")
+
+	analyticsData, err := h.LinkService.GetLinkAnalytics(r.Context(), userID, shortcode)
+	if err != nil {
+		h.handleError(w, r, err)
+		return
+	}
+
+	render.Status(r, http.StatusOK)
+	render.JSON(w, r, dto.SuccessResponse[*analytics.LinkAnalytics]{
+		Data: analyticsData,
 	})
 }
 
