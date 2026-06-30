@@ -45,6 +45,7 @@ docker-compose.yml
 ```
 
 See [docs/WELCOME.md](docs/WELCOME.md) for a full developer onboarding guide.
+See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for MVP deployment instructions.
 
 ## API Overview
 
@@ -78,6 +79,10 @@ task run
 # Run client
 cd client && pnpm install && pnpm dev
 ```
+
+## CI
+
+GitHub Actions runs backend tests, frontend checks, and OpenAPI YAML validation on pushes to `main` and pull requests.
 
 ## License
 
