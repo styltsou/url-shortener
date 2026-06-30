@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -47,12 +48,14 @@ type LinkService interface {
 
 type LinkHandler struct {
 	LinkService LinkService
+	baseURL     string
 	logger      logger.Logger
 }
 
-func NewLinkHandler(linkService LinkService, logger logger.Logger) *LinkHandler {
+func NewLinkHandler(linkService LinkService, baseURL string, logger logger.Logger) *LinkHandler {
 	return &LinkHandler{
 		LinkService: linkService,
+		baseURL:     baseURL,
 		logger:      logger,
 	}
 }
@@ -82,7 +85,8 @@ func (h *LinkHandler) Redirect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.LinkService.RecordClick(r.Context(), link.ID, r.RemoteAddr, r.UserAgent(), r.Referer())
+	ip, _, _ := net.SplitHostPort(r.RemoteAddr)
+	go h.LinkService.RecordClick(context.WithoutCancel(r.Context()), link.ID, ip, r.UserAgent(), r.Referer())
 
 	http.Redirect(w, r, link.OriginalUrl, http.StatusFound)
 }
@@ -153,7 +157,16 @@ func (h *LinkHandler) ListLinks(w http.ResponseWriter, r *http.Request) {
 					zap.String("tag_id", tagStr),
 					zap.Error(err),
 				)
-				continue
+
+				render.Status(r, http.StatusBadRequest)
+				render.JSON(w, r, dto.ErrorResponse{
+					Error: dto.ErrorObject{
+						Code:   apperrors.CodeInvalidID,
+						Title:  "Invalid tag ID format",
+						Detail: fmt.Sprintf("Tag ID '%s' is not a valid UUID", tagStr),
+					},
+				})
+				return
 			}
 			tagIDs = append(tagIDs, tagID)
 		}
@@ -165,11 +178,21 @@ func (h *LinkHandler) ListLinks(w http.ResponseWriter, r *http.Request) {
 	if pageStr := r.URL.Query().Get("page"); pageStr != "" {
 		if p, err := strconv.Atoi(pageStr); err == nil && p > 0 {
 			page = p
+		} else {
+			h.logger.Warn("Invalid page value, using default",
+				zap.String("provided", pageStr),
+				zap.Int("default", page),
+			)
 		}
 	}
 	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
 		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 {
 			limit = l
+		} else {
+			h.logger.Warn("Invalid limit value, using default",
+				zap.String("provided", limitStr),
+				zap.Int("default", limit),
+			)
 		}
 	}
 
@@ -227,23 +250,8 @@ func (h *LinkHandler) GetLink(w http.ResponseWriter, r *http.Request) {
 func (h *LinkHandler) UpdateLink(w http.ResponseWriter, r *http.Request) {
 	userID := mw.GetUserIDFromContext(r.Context())
 
-	linkID, uuidErr := uuid.Parse(chi.URLParam(r, "id"))
-	if uuidErr != nil {
-		h.logger.Warn("Invalid ID format",
-			zap.Error(uuidErr),
-			zap.String("provided_id", chi.URLParam(r, "id")),
-			zap.String("method", r.Method),
-			zap.String("path", r.URL.Path),
-		)
-
-		render.Status(r, http.StatusBadRequest)
-		render.JSON(w, r, dto.ErrorResponse{
-			Error: dto.ErrorObject{
-				Code:   apperrors.CodeInvalidID,
-				Title:  "Invalid ID format",
-				Detail: "ID must be a valid UUID format",
-			},
-		})
+	linkID, ok := parseUUIDParam(w, r, h.logger)
+	if !ok {
 		return
 	}
 
@@ -274,23 +282,8 @@ func (h *LinkHandler) UpdateLink(w http.ResponseWriter, r *http.Request) {
 func (h *LinkHandler) DeleteLink(w http.ResponseWriter, r *http.Request) {
 	userID := mw.GetUserIDFromContext(r.Context())
 
-	linkID, uuidErr := uuid.Parse(chi.URLParam(r, "id"))
-	if uuidErr != nil {
-		h.logger.Warn("Invalid ID format",
-			zap.Error(uuidErr),
-			zap.String("provided_id", chi.URLParam(r, "id")), // Log for debugging
-			zap.String("method", r.Method),
-			zap.String("path", r.URL.Path),
-		)
-
-		render.Status(r, http.StatusBadRequest)
-		render.JSON(w, r, dto.ErrorResponse{
-			Error: dto.ErrorObject{
-				Code:   apperrors.CodeInvalidID,
-				Title:  "Invalid ID format",
-				Detail: "ID must be a valid UUID format",
-			},
-		})
+	linkID, ok := parseUUIDParam(w, r, h.logger)
+	if !ok {
 		return
 	}
 
@@ -312,23 +305,8 @@ func (h *LinkHandler) DeleteLink(w http.ResponseWriter, r *http.Request) {
 func (h *LinkHandler) AddTagsToLink(w http.ResponseWriter, r *http.Request) {
 	userID := mw.GetUserIDFromContext(r.Context())
 
-	linkID, uuidErr := uuid.Parse(chi.URLParam(r, "id"))
-	if uuidErr != nil {
-		h.logger.Warn("Invalid link ID format",
-			zap.Error(uuidErr),
-			zap.String("provided_id", chi.URLParam(r, "id")),
-			zap.String("method", r.Method),
-			zap.String("path", r.URL.Path),
-		)
-
-		render.Status(r, http.StatusBadRequest)
-		render.JSON(w, r, dto.ErrorResponse{
-			Error: dto.ErrorObject{
-				Code:   apperrors.CodeInvalidID,
-				Title:  "Invalid ID format",
-				Detail: "Link ID must be a valid UUID format",
-			},
-		})
+	linkID, ok := parseUUIDParam(w, r, h.logger)
+	if !ok {
 		return
 	}
 
@@ -350,23 +328,8 @@ func (h *LinkHandler) AddTagsToLink(w http.ResponseWriter, r *http.Request) {
 func (h *LinkHandler) RemoveTagsFromLink(w http.ResponseWriter, r *http.Request) {
 	userID := mw.GetUserIDFromContext(r.Context())
 
-	linkID, uuidErr := uuid.Parse(chi.URLParam(r, "id"))
-	if uuidErr != nil {
-		h.logger.Warn("Invalid link ID format",
-			zap.Error(uuidErr),
-			zap.String("provided_id", chi.URLParam(r, "id")),
-			zap.String("method", r.Method),
-			zap.String("path", r.URL.Path),
-		)
-
-		render.Status(r, http.StatusBadRequest)
-		render.JSON(w, r, dto.ErrorResponse{
-			Error: dto.ErrorObject{
-				Code:   apperrors.CodeInvalidID,
-				Title:  "Invalid ID format",
-				Detail: "Link ID must be a valid UUID format",
-			},
-		})
+	linkID, ok := parseUUIDParam(w, r, h.logger)
+	if !ok {
 		return
 	}
 
@@ -395,7 +358,7 @@ func (h *LinkHandler) GetQRCode(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	shortURL := fmt.Sprintf("%s/%s", r.Host, shortcode)
+	shortURL := fmt.Sprintf("%s/%s", h.baseURL, shortcode)
 
 	png, err := qrcode.Encode(shortURL, qrcode.Medium, size)
 	if err != nil {

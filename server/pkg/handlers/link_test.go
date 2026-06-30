@@ -251,7 +251,7 @@ func TestLinkHandler_CreateLink(t *testing.T) {
 			// Set request body in context (same way RequestValidator middleware does)
 			// Only set if not testing invalid JSON (that would fail validation middleware)
 			if tt.name != "invalid JSON body" {
-				ctx = context.WithValue(ctx, middleware.ReqBodyKey(), tt.requestBody)
+				ctx = middleware.CtxWithRequestBody(ctx, tt.requestBody)
 			}
 			req = req.WithContext(ctx)
 
@@ -591,7 +591,7 @@ func TestLinkHandler_UpdateLink(t *testing.T) {
 			req := httptest.NewRequest(http.MethodPatch, "/api/v1/links/"+tt.linkID, bytes.NewBuffer(bodyBytes))
 			ctx := middleware.WithUserID(req.Context(), tt.userID)
 			// Set request body in context (same way RequestValidator middleware does)
-			ctx = context.WithValue(ctx, middleware.ReqBodyKey(), tt.requestBody)
+			ctx = middleware.CtxWithRequestBody(ctx, tt.requestBody)
 			req = req.WithContext(ctx)
 
 			w := httptest.NewRecorder()
@@ -974,7 +974,7 @@ func TestLinkHandler_AddTagsToLink(t *testing.T) {
 			req := httptest.NewRequest(http.MethodPost, "/api/v1/links/"+tt.linkID+"/tags", bytes.NewBuffer(bodyBytes))
 			req.Header.Set("Content-Type", "application/json")
 			ctx := middleware.WithUserID(req.Context(), tt.userID)
-			ctx = context.WithValue(ctx, middleware.ReqBodyKey(), tt.requestBody)
+			ctx = middleware.CtxWithRequestBody(ctx, tt.requestBody)
 			req = req.WithContext(ctx)
 
 			w := httptest.NewRecorder()
@@ -1106,7 +1106,7 @@ func TestLinkHandler_RemoveTagsFromLink(t *testing.T) {
 			req := httptest.NewRequest(http.MethodDelete, "/api/v1/links/"+tt.linkID+"/tags", bytes.NewBuffer(bodyBytes))
 			req.Header.Set("Content-Type", "application/json")
 			ctx := middleware.WithUserID(req.Context(), tt.userID)
-			ctx = context.WithValue(ctx, middleware.ReqBodyKey(), tt.requestBody)
+			ctx = middleware.CtxWithRequestBody(ctx, tt.requestBody)
 			req = req.WithContext(ctx)
 
 			w := httptest.NewRecorder()

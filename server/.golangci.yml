@@ -14,10 +14,14 @@ issues:
         - errcheck
 
 linters:
-  # Just enable the most useful ones
   enable:
-    - errcheck      # Check for unchecked errors (critical!)
+    - errcheck      # Check for unchecked errors
     - govet         # Basic static analysis
     - staticcheck   # Catches bugs go vet misses
     - unused        # Unused code
     - ineffassign   # Ineffective assignments
+    - gosec         # Security checks (Host header injection, credential leaks, etc.)
+    - gosimple      # Code simplification suggestions
+    - gocritic      # Performance and code smells
+    - misspell      # Catches typos in comments/strings
+    - goconst       # Finds repeated strings that should be constants

@@ -65,7 +65,7 @@ func (s *TagService) CreateTag(ctx context.Context, userID string, name string) 
 	if err != nil {
 		// Check for unique constraint violation (tag name already exists for this user)
 		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+		if errors.As(err, &pgErr) && pgErr.Code == apperrors.PgUniqueViolation {
 			return db.CreateTagRow{},
 				fmt.Errorf("%w: tag name '%s' already exists", apperrors.TagNameTaken, name)
 		}
@@ -90,7 +90,7 @@ func (s *TagService) UpdateTag(ctx context.Context, userID string, tagID uuid.UU
 		}
 
 		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+		if errors.As(err, &pgErr) && pgErr.Code == apperrors.PgUniqueViolation {
 			return db.UpdateTagRow{},
 				fmt.Errorf("%w: tag name '%s' already exists", apperrors.TagNameTaken, name)
 		}

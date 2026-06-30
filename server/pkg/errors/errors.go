@@ -21,10 +21,15 @@ const (
 	CodeTagNotFound  ErrorCode = "tag_not_found"
 	CodeTagNameTaken ErrorCode = "tag_name_taken"
 
+	CodeForbidden        ErrorCode = "forbidden"
 	CodeNotFound         ErrorCode = "not_found"
 	CodeMethodNotAllowed ErrorCode = "method_not_allowed"
 
 	CodeInternalError ErrorCode = "internal_server_error"
+)
+
+const (
+	PgUniqueViolation = "23505"
 )
 
 // Sentinel errors - use these in services, check with errors.Is()
@@ -39,5 +44,6 @@ var (
 	TagNotFound        = errors.New("Tag not found")
 	TagNameTaken       = errors.New("Tag name already taken")
 
+	ErrForbidden  = errors.New("Forbidden")
 	InternalError = errors.New("Internal server error")
 )

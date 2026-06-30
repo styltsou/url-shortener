@@ -53,16 +53,33 @@ func New(ctx context.Context, cfg Config, log logger.Logger) (*Client, error) {
 		return &Client{conn: nil, logger: log}, nil
 	}
 
+	dialTimeout := cfg.DialTimeout
+	if dialTimeout == 0 {
+		dialTimeout = 5 * time.Second
+	}
+	maxOpenConns := cfg.MaxOpenConns
+	if maxOpenConns == 0 {
+		maxOpenConns = 5
+	}
+	maxIdleConns := cfg.MaxIdleConns
+	if maxIdleConns == 0 {
+		maxIdleConns = 2
+	}
+	connMaxLifetime := cfg.ConnMaxLifetime
+	if connMaxLifetime == 0 {
+		connMaxLifetime = 5 * time.Minute
+	}
+
 	conn, err := clickhouse.Open(&clickhouse.Options{
 		Addr: []string{cfg.URL},
 		Auth: clickhouse.Auth{
 			Username: cfg.Username,
 			Password: cfg.Password,
 		},
-		DialTimeout:     5 * time.Second,
-		MaxOpenConns:    5,
-		MaxIdleConns:    2,
-		ConnMaxLifetime: time.Minute * 5,
+		DialTimeout:     dialTimeout,
+		MaxOpenConns:    maxOpenConns,
+		MaxIdleConns:    maxIdleConns,
+		ConnMaxLifetime: connMaxLifetime,
 	})
 	if err != nil {
 		return &Client{conn: nil, logger: log},

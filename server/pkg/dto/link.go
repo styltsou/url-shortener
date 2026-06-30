@@ -22,7 +22,7 @@ type UpdateLink struct {
 	ExpiresAt *time.Time `json:"expires_at"`
 }
 
-func (dto UpdateLink) Validate() error {
+func (dto *UpdateLink) Validate() error {
 	if dto.Shortcode == nil && dto.IsActive == nil && dto.ExpiresAt == nil {
 		return errors.New("At least one of the following fields must be provided: shortcode | is_active | expires_at")
 	}

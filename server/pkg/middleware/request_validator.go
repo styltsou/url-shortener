@@ -21,10 +21,10 @@ var validate = validator.New()
 
 const reqBodyKey contextKey = "request_body"
 
-// ReqBodyKey returns the context key used for request body storage.
-// This is exported for testing purposes.
-func ReqBodyKey() contextKey {
-	return reqBodyKey
+// CtxWithRequestBody returns a new context with the request body attached.
+// This is used by tests to simulate a validated request body in context.
+func CtxWithRequestBody(ctx context.Context, body any) context.Context {
+	return context.WithValue(ctx, reqBodyKey, body)
 }
 
 // Validator defines the interface for custom validation logic on DTOs.

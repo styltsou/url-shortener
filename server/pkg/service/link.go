@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/redis/go-redis/v9"
@@ -85,20 +86,41 @@ type LinkQueries interface {
 	ListUserLinkIDs(ctx context.Context, userID string) ([]uuid.UUID, error)
 }
 
+type TxBeginner interface {
+	Begin(ctx context.Context) (pgx.Tx, error)
+}
+
 type LinkService struct {
+	txBeginner      TxBeginner
 	queries         LinkQueries
 	cache           *redis.Client
 	analyticsClient *analytics.Client
 	logger          logger.Logger
+	runInTx         func(ctx context.Context, fn func(LinkQueries) error) error
 }
 
-func NewLinkService(queries LinkQueries, cache *redis.Client, analyticsClient *analytics.Client, logger logger.Logger) *LinkService {
-	return &LinkService{
+func NewLinkService(txBeginner TxBeginner, queries LinkQueries, cache *redis.Client, analyticsClient *analytics.Client, logger logger.Logger) *LinkService {
+	s := &LinkService{
+		txBeginner:      txBeginner,
 		queries:         queries,
 		cache:           cache,
 		analyticsClient: analyticsClient,
 		logger:          logger,
 	}
+	s.runInTx = func(ctx context.Context, fn func(LinkQueries) error) error {
+		tx, err := s.txBeginner.Begin(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to begin transaction: %w", err)
+		}
+		defer tx.Rollback(ctx)
+
+		qtx := db.New(tx)
+		if err := fn(qtx); err != nil {
+			return err
+		}
+		return tx.Commit(ctx)
+	}
+	return s
 }
 
 func (s *LinkService) CreateShortLink(
@@ -111,12 +133,6 @@ func (s *LinkService) CreateShortLink(
 	// Validate URL - return sentinel error that handlers will map
 	if err := validateURL(originalURL); err != nil {
 		return db.TryCreateLinkRow{}, err
-	}
-
-	// Validate expiration date if provided
-	if expiresAt != nil && expiresAt.Before(time.Now()) {
-		return db.TryCreateLinkRow{},
-			fmt.Errorf("%w: expires_at must be set to a future time", apperrors.InvalidURL)
 	}
 
 	// Prepare expires_at for database
@@ -451,7 +467,7 @@ func (s *LinkService) UpdateLink(
 		}
 
 		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+		if errors.As(err, &pgErr) && pgErr.Code == apperrors.PgUniqueViolation {
 			shortcodeStr := "n/a"
 			if shortcode != nil {
 				shortcodeStr = *shortcode
@@ -496,7 +512,6 @@ func (s *LinkService) DeleteLink(ctx context.Context, userID string, id uuid.UUI
 // Returns the updated link with all tags
 func (s *LinkService) AddTagsToLink(ctx context.Context, userID string, linkID uuid.UUID, tagIDs []uuid.UUID) (db.GetLinkByIdAndUserWithTagsRow, error) {
 	if len(tagIDs) == 0 {
-		// No-op if empty, but still return the link
 		link, err := s.queries.GetLinkByIdAndUserWithTags(ctx, db.GetLinkByIdAndUserWithTagsParams{
 			ID:     linkID,
 			UserID: userID,
@@ -507,26 +522,30 @@ func (s *LinkService) AddTagsToLink(ctx context.Context, userID string, linkID u
 		return link, nil
 	}
 
-	err := s.queries.AddTagsToLink(ctx, db.AddTagsToLinkParams{
-		LinkID: linkID,
-		UserID: userID,
-		TagIDs: tagIDs,
-	})
-
-	if err != nil {
-		return db.GetLinkByIdAndUserWithTagsRow{}, fmt.Errorf("failed to add tags to link: %w", err)
-	}
-
-	// Fetch and return the updated link with tags
-	link, err := s.queries.GetLinkByIdAndUserWithTags(ctx, db.GetLinkByIdAndUserWithTagsParams{
-		ID:     linkID,
-		UserID: userID,
-	})
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return db.GetLinkByIdAndUserWithTagsRow{}, fmt.Errorf("%w: %v", apperrors.LinkNotFound, err)
+	var link db.GetLinkByIdAndUserWithTagsRow
+	if err := s.runInTx(ctx, func(qtx LinkQueries) error {
+		if err := qtx.AddTagsToLink(ctx, db.AddTagsToLinkParams{
+			LinkID: linkID,
+			UserID: userID,
+			TagIDs: tagIDs,
+		}); err != nil {
+			return fmt.Errorf("failed to add tags to link: %w", err)
 		}
-		return db.GetLinkByIdAndUserWithTagsRow{}, fmt.Errorf("failed to get link after adding tags: %w", err)
+
+		var err error
+		link, err = qtx.GetLinkByIdAndUserWithTags(ctx, db.GetLinkByIdAndUserWithTagsParams{
+			ID:     linkID,
+			UserID: userID,
+		})
+		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return fmt.Errorf("%w: %v", apperrors.LinkNotFound, err)
+			}
+			return fmt.Errorf("failed to get link after adding tags: %w", err)
+		}
+		return nil
+	}); err != nil {
+		return db.GetLinkByIdAndUserWithTagsRow{}, err
 	}
 
 	return link, nil
@@ -536,7 +555,6 @@ func (s *LinkService) AddTagsToLink(ctx context.Context, userID string, linkID u
 // Returns the updated link with all tags
 func (s *LinkService) RemoveTagsFromLink(ctx context.Context, userID string, linkID uuid.UUID, tagIDs []uuid.UUID) (db.GetLinkByIdAndUserWithTagsRow, error) {
 	if len(tagIDs) == 0 {
-		// No-op if empty, but still return the link
 		link, err := s.queries.GetLinkByIdAndUserWithTags(ctx, db.GetLinkByIdAndUserWithTagsParams{
 			ID:     linkID,
 			UserID: userID,
@@ -547,26 +565,30 @@ func (s *LinkService) RemoveTagsFromLink(ctx context.Context, userID string, lin
 		return link, nil
 	}
 
-	err := s.queries.RemoveTagsFromLink(ctx, db.RemoveTagsFromLinkParams{
-		LinkID: linkID,
-		UserID: userID,
-		TagIDs: tagIDs,
-	})
-
-	if err != nil {
-		return db.GetLinkByIdAndUserWithTagsRow{}, fmt.Errorf("failed to remove tags from link: %w", err)
-	}
-
-	// Fetch and return the updated link with tags
-	link, err := s.queries.GetLinkByIdAndUserWithTags(ctx, db.GetLinkByIdAndUserWithTagsParams{
-		ID:     linkID,
-		UserID: userID,
-	})
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return db.GetLinkByIdAndUserWithTagsRow{}, fmt.Errorf("%w: %v", apperrors.LinkNotFound, err)
+	var link db.GetLinkByIdAndUserWithTagsRow
+	if err := s.runInTx(ctx, func(qtx LinkQueries) error {
+		if err := qtx.RemoveTagsFromLink(ctx, db.RemoveTagsFromLinkParams{
+			LinkID: linkID,
+			UserID: userID,
+			TagIDs: tagIDs,
+		}); err != nil {
+			return fmt.Errorf("failed to remove tags from link: %w", err)
 		}
-		return db.GetLinkByIdAndUserWithTagsRow{}, fmt.Errorf("failed to get link after removing tags: %w", err)
+
+		var err error
+		link, err = qtx.GetLinkByIdAndUserWithTags(ctx, db.GetLinkByIdAndUserWithTagsParams{
+			ID:     linkID,
+			UserID: userID,
+		})
+		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return fmt.Errorf("%w: %v", apperrors.LinkNotFound, err)
+			}
+			return fmt.Errorf("failed to get link after removing tags: %w", err)
+		}
+		return nil
+	}); err != nil {
+		return db.GetLinkByIdAndUserWithTagsRow{}, err
 	}
 
 	return link, nil

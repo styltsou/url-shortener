@@ -18,9 +18,13 @@ type Config struct {
 	ClickhouseURL            string   `mapstructure:"CLICKHOUSE_URL"`
 	ClickhouseUsername       string   `mapstructure:"CLICKHOUSE_USERNAME"`
 	ClickhousePassword       string   `mapstructure:"CLICKHOUSE_PASSWORD"`
+	ClickhouseDialTimeout    int      `mapstructure:"CLICKHOUSE_DIAL_TIMEOUT" validate:"omitempty,min=1"`
+	ClickhouseMaxOpenConns   int      `mapstructure:"CLICKHOUSE_MAX_OPEN_CONNS" validate:"omitempty,min=1"`
+	ClickhouseMaxIdleConns   int      `mapstructure:"CLICKHOUSE_MAX_IDLE_CONNS" validate:"omitempty,min=1"`
+	ClickhouseConnMaxLifeMin int      `mapstructure:"CLICKHOUSE_CONN_MAX_LIFE_MIN" validate:"omitempty,min=1"`
 	RedisURL                 string   `mapstructure:"REDIS_URL" validate:"required"`
-	RedisUsername            string   `mapstructure:"REDIS_USERNAME" validate:"required"`
-	RedisPassword            string   `mapstructure:"REDIS_PASSWORD" validate:"required"`
+	RedisUsername            string   `mapstructure:"REDIS_USERNAME" validate:"omitempty"`
+	RedisPassword            string   `mapstructure:"REDIS_PASSWORD" validate:"omitempty"`
 	RedisDB                  int      `mapstructure:"REDIS_DB" validate:"omitempty"`
 	RedisDialTimeout         int      `mapstructure:"REDIS_DIAL_TIMEOUT" validate:"omitempty"`
 	RedisReadTimeout         int      `mapstructure:"REDIS_READ_TIMEOUT" validate:"omitempty"`
@@ -33,6 +37,7 @@ type Config struct {
 	CORSExposedHeaders       []string `mapstructure:"CORS_EXPOSED_HEADERS" validate:"omitempty"`
 	CORSAllowCredentials     bool     `mapstructure:"CORS_ALLOW_CREDENTIALS" validate:"omitempty"`
 	CORSMaxAge               int      `mapstructure:"CORS_MAX_AGE" validate:"omitempty"`
+	BaseURL                  string   `mapstructure:"BASE_URL" validate:"required"`
 	ServerReadTimeout        int      `mapstructure:"SERVER_READ_TIMEOUT" validate:"min=1"`
 	ServerWriteTimeout       int      `mapstructure:"SERVER_WRITE_TIMEOUT" validate:"min=1"`
 	ServerIdleTimeout        int      `mapstructure:"SERVER_IDLE_TIMEOUT" validate:"min=1"`
@@ -105,6 +110,7 @@ func Load() (*Config, error) {
 
 	v.SetDefault("APP_ENV", "development")
 	v.SetDefault("PORT", 8080)
+	v.SetDefault("BASE_URL", "http://localhost:8080")
 
 	v.SetDefault("CORS_ALLOWED_ORIGINS", "http://localhost:5173,http://localhost:3000")
 	v.SetDefault("CORS_ALLOWED_METHODS", "GET,POST,PUT,PATCH,DELETE,OPTIONS")
@@ -121,6 +127,11 @@ func Load() (*Config, error) {
 	v.SetDefault("REDIS_READ_TIMEOUT", 3)
 	v.SetDefault("REDIS_WRITE_TIMEOUT", 3)
 	v.SetDefault("REDIS_MAX_RETRIES", 3)
+
+	v.SetDefault("CLICKHOUSE_DIAL_TIMEOUT", 5)
+	v.SetDefault("CLICKHOUSE_MAX_OPEN_CONNS", 5)
+	v.SetDefault("CLICKHOUSE_MAX_IDLE_CONNS", 2)
+	v.SetDefault("CLICKHOUSE_CONN_MAX_LIFE_MIN", 5)
 
 	// Read .env file if it exists; fallback to environment variables in containers
 	v.SetConfigName(".env")

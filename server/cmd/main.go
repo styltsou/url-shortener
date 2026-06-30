@@ -49,35 +49,35 @@ func main() {
 	}
 
 	go func() {
-		sigint := make(chan os.Signal, 1)
-		signal.Notify(sigint, os.Interrupt, syscall.SIGTERM)
-		<-sigint
+		log.Info("Server start",
+			zap.Int("port", cfg.Port),
+			zap.String("env", cfg.AppEnv),
+		)
 
-		log.Info("Shutting down server...")
-
-		// TODO: Need to get more comfortable with what this does
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-
-		if err := httpServer.Shutdown(ctx); err != nil {
-			log.Error("Error while shutting down server",
+		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatal("Server failed",
 				zap.Error(err),
 			)
 		}
-
-		srv.CloseConnections()
 	}()
 
-	log.Info("Server start",
-		zap.Int("port", cfg.Port),
-		zap.String("env", cfg.AppEnv),
-	)
+	sigint := make(chan os.Signal, 1)
+	signal.Notify(sigint, os.Interrupt, syscall.SIGTERM)
+	<-sigint
 
-	if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		log.Fatal("Server failed",
+	log.Info("Shutting down server...")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// Shutdown gracefully drains active connections and stops accepting new ones
+	if err := httpServer.Shutdown(ctx); err != nil {
+		log.Error("Error while shutting down server",
 			zap.Error(err),
 		)
 	}
+
+	srv.CloseConnections()
 
 	log.Info("Server stopped")
 }

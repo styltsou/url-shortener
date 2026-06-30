@@ -4,6 +4,7 @@ package server
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/clerk/clerk-sdk-go/v2"
@@ -22,6 +23,25 @@ import (
 	"github.com/styltsou/url-shortener/server/pkg/service"
 	"go.uber.org/zap"
 )
+
+// sanitizeDSN redacts the password portion of a connection string for safe logging.
+func sanitizeDSN(dsn string) string {
+	// Handle postgres://user:pass@host/db format
+	if strings.Contains(dsn, "://") {
+		before, after, found := strings.Cut(dsn, "://")
+		if !found {
+			return dsn
+		}
+		// Find the @ sign after credentials
+		if atIdx := strings.Index(after, "@"); atIdx > 0 {
+			creds := after[:atIdx]
+			if colonIdx := strings.Index(creds, ":"); colonIdx > 0 {
+				return before + "://" + creds[:colonIdx+1] + "****" + after[atIdx:]
+			}
+		}
+	}
+	return dsn
+}
 
 // Server encapsulates the HTTP server, router, database pool, and context
 type Server struct {
@@ -52,7 +72,7 @@ func New(config *config.Config, log logger.Logger) (*Server, error) {
 	}
 	s.Pool = pool
 	log.Info("Postgres connected successfully",
-		zap.String("pg_connection_str", config.PostgresConnectionString),
+		zap.String("pg_connection_str", sanitizeDSN(config.PostgresConnectionString)),
 	)
 
 	// Try to connect to Redis, but don't fail if it's unavailable (degraded mode)
@@ -67,7 +87,6 @@ func New(config *config.Config, log logger.Logger) (*Server, error) {
 		WriteTimeout: time.Duration(config.RedisWriteTimeout) * time.Second,
 	})
 
-	// TODO: Need to understand this better
 	// Ping Redis with a timeout to avoid hanging
 	pingCtx, cancel := context.WithTimeout(s.Context, 3*time.Second)
 	defer cancel()
@@ -76,25 +95,35 @@ func New(config *config.Config, log logger.Logger) (*Server, error) {
 		s.RedisClient = nil
 		log.Warn("Redis connection failed, running without cache",
 			zap.Error(err),
-			zap.String("redis_url", config.RedisURL),
+			zap.String("redis_url", sanitizeDSN(config.RedisURL)),
 		)
 	} else {
 		s.RedisClient = rdb
 		log.Info("Redis connected successfully",
-			zap.String("redis_url", config.RedisURL),
+			zap.String("redis_url", sanitizeDSN(config.RedisURL)),
 		)
 	}
 
 	queries := db.New(s.Pool)
 
-	s.AnalyticsClient, _ = analytics.New(s.Context, analytics.Config{
-		URL:      config.ClickhouseURL,
-		Username: config.ClickhouseUsername,
-		Password: config.ClickhousePassword,
+	var analyticsErr error
+	s.AnalyticsClient, analyticsErr = analytics.New(s.Context, analytics.Config{
+		URL:             config.ClickhouseURL,
+		Username:        config.ClickhouseUsername,
+		Password:        config.ClickhousePassword,
+		DialTimeout:     time.Duration(config.ClickhouseDialTimeout) * time.Second,
+		MaxOpenConns:    config.ClickhouseMaxOpenConns,
+		MaxIdleConns:    config.ClickhouseMaxIdleConns,
+		ConnMaxLifetime: time.Duration(config.ClickhouseConnMaxLifeMin) * time.Minute,
 	}, s.Logger)
+	if analyticsErr != nil {
+		log.Warn("ClickHouse analytics disabled",
+			zap.Error(analyticsErr),
+		)
+	}
 
-	linkSvc := service.NewLinkService(queries, s.RedisClient, s.AnalyticsClient, s.Logger)
-	linkHandler := handlers.NewLinkHandler(linkSvc, s.Logger)
+	linkSvc := service.NewLinkService(s.Pool, queries, s.RedisClient, s.AnalyticsClient, s.Logger)
+	linkHandler := handlers.NewLinkHandler(linkSvc, config.BaseURL, s.Logger)
 
 	tagSvc := service.NewTagService(queries, s.Logger)
 	tagHandler := handlers.NewTagHandler(tagSvc, s.Logger)

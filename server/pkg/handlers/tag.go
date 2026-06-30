@@ -2,10 +2,10 @@ package handlers
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"net/http"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/render"
 	"github.com/google/uuid"
 	"github.com/styltsou/url-shortener/server/pkg/db"
@@ -80,23 +80,8 @@ func (h *TagHandler) CreateTag(w http.ResponseWriter, r *http.Request) {
 func (h *TagHandler) UpdateTag(w http.ResponseWriter, r *http.Request) {
 	userID := mw.GetUserIDFromContext(r.Context())
 
-	tagID, uuidErr := uuid.Parse(chi.URLParam(r, "id"))
-	if uuidErr != nil {
-		h.logger.Warn("Invalid ID format",
-			zap.Error(uuidErr),
-			zap.String("provided_id", chi.URLParam(r, "id")),
-			zap.String("method", r.Method),
-			zap.String("path", r.URL.Path),
-		)
-
-		render.Status(r, http.StatusBadRequest)
-		render.JSON(w, r, dto.ErrorResponse{
-			Error: dto.ErrorObject{
-				Code:   apperrors.CodeInvalidID,
-				Title:  "Invalid ID format",
-				Detail: "ID must be a valid UUID format",
-			},
-		})
+	tagID, ok := parseUUIDParam(w, r, h.logger)
+	if !ok {
 		return
 	}
 
@@ -118,23 +103,8 @@ func (h *TagHandler) UpdateTag(w http.ResponseWriter, r *http.Request) {
 func (h *TagHandler) DeleteTag(w http.ResponseWriter, r *http.Request) {
 	userID := mw.GetUserIDFromContext(r.Context())
 
-	tagID, uuidErr := uuid.Parse(chi.URLParam(r, "id"))
-	if uuidErr != nil {
-		h.logger.Warn("Invalid ID format",
-			zap.Error(uuidErr),
-			zap.String("provided_id", chi.URLParam(r, "id")),
-			zap.String("method", r.Method),
-			zap.String("path", r.URL.Path),
-		)
-
-		render.Status(r, http.StatusBadRequest)
-		render.JSON(w, r, dto.ErrorResponse{
-			Error: dto.ErrorObject{
-				Code:   apperrors.CodeInvalidID,
-				Title:  "Invalid ID format",
-				Detail: "ID must be a valid UUID format",
-			},
-		})
+	tagID, ok := parseUUIDParam(w, r, h.logger)
+	if !ok {
 		return
 	}
 
@@ -164,13 +134,28 @@ func (h *TagHandler) DeleteTags(w http.ResponseWriter, r *http.Request) {
 
 	render.Status(r, http.StatusOK)
 	render.JSON(w, r, &dto.SuccessResponse[[]db.DeleteTagsRow]{
-		Data: deletedTags,
+		Data: normalizeSlice(deletedTags),
 	})
 }
 
 // handleError maps errors to HTTP responses and writes them directly
 func (h *TagHandler) handleError(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		h.logger.Warn("Tag not found",
+			zap.Error(err),
+			zap.String("method", r.Method),
+			zap.String("path", r.URL.Path),
+		)
+		render.Status(r, http.StatusNotFound)
+		render.JSON(w, r, dto.ErrorResponse{
+			Error: dto.ErrorObject{
+				Code:   apperrors.CodeTagNotFound,
+				Title:  apperrors.TagNotFound.Error(),
+				Detail: "Unable to find tag with the provided ID",
+			},
+		})
+
 	case errors.Is(err, apperrors.TagNotFound):
 		h.logger.Warn("Tag not found",
 			zap.Error(err),

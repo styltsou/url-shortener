@@ -1665,6 +1665,9 @@ func TestLinkService_AddTagsToLink(t *testing.T) {
 		service := &LinkService{
 			queries: mockQueries,
 			logger:  createTestLogger(),
+			runInTx: func(ctx context.Context, fn func(LinkQueries) error) error {
+				return fn(mockQueries)
+			},
 		}
 		link, err := service.AddTagsToLink(ctx, userID, linkID, []uuid.UUID{tagID1, tagID2})
 
@@ -1701,6 +1704,9 @@ func TestLinkService_AddTagsToLink(t *testing.T) {
 		service := &LinkService{
 			queries: mockQueries,
 			logger:  createTestLogger(),
+			runInTx: func(ctx context.Context, fn func(LinkQueries) error) error {
+				return fn(mockQueries)
+			},
 		}
 		link, err := service.AddTagsToLink(ctx, userID, linkID, []uuid.UUID{})
 
@@ -1723,6 +1729,9 @@ func TestLinkService_AddTagsToLink(t *testing.T) {
 		service := &LinkService{
 			queries: mockQueries,
 			logger:  createTestLogger(),
+			runInTx: func(ctx context.Context, fn func(LinkQueries) error) error {
+				return fn(mockQueries)
+			},
 		}
 		_, err := service.AddTagsToLink(ctx, userID, linkID, []uuid.UUID{tagID1})
 
@@ -1778,6 +1787,9 @@ func TestLinkService_RemoveTagsFromLink(t *testing.T) {
 		service := &LinkService{
 			queries: mockQueries,
 			logger:  createTestLogger(),
+			runInTx: func(ctx context.Context, fn func(LinkQueries) error) error {
+				return fn(mockQueries)
+			},
 		}
 		link, err := service.RemoveTagsFromLink(ctx, userID, linkID, []uuid.UUID{tagID1, tagID2})
 
@@ -1814,6 +1826,9 @@ func TestLinkService_RemoveTagsFromLink(t *testing.T) {
 		service := &LinkService{
 			queries: mockQueries,
 			logger:  createTestLogger(),
+			runInTx: func(ctx context.Context, fn func(LinkQueries) error) error {
+				return fn(mockQueries)
+			},
 		}
 		link, err := service.RemoveTagsFromLink(ctx, userID, linkID, []uuid.UUID{})
 
@@ -1836,6 +1851,9 @@ func TestLinkService_RemoveTagsFromLink(t *testing.T) {
 		service := &LinkService{
 			queries: mockQueries,
 			logger:  createTestLogger(),
+			runInTx: func(ctx context.Context, fn func(LinkQueries) error) error {
+				return fn(mockQueries)
+			},
 		}
 		_, err := service.RemoveTagsFromLink(ctx, userID, linkID, []uuid.UUID{tagID1})
 
