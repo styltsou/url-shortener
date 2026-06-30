@@ -9,6 +9,10 @@ server/bin/
 # Guides directory (learning materials, not part of the project)
 guides/
 
+# Agent skill files
+.agents/
+skills-lock.json
+
 # Don't commit this gitignore file
 .gitignore
 
