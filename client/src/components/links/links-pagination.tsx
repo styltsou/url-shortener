@@ -15,11 +15,7 @@ interface LinksPaginationProps {
 	onPageChange: (page: number) => void;
 }
 
-export function LinksPagination({
-	currentPage,
-	totalPages,
-	onPageChange,
-}: LinksPaginationProps) {
+export function LinksPagination({ currentPage, totalPages, onPageChange }: LinksPaginationProps) {
 	const getPageNumbers = () => {
 		const pages: (number | "ellipsis")[] = [];
 		const maxVisible = 7;
@@ -88,9 +84,7 @@ export function LinksPagination({
 					<PaginationPrevious
 						href="#"
 						onClick={handlePreviousClick}
-						className={cn(
-							currentPage === 1 && "pointer-events-none opacity-50"
-						)}
+						className={cn(currentPage === 1 && "pointer-events-none opacity-50")}
 					/>
 				</PaginationItem>
 				{pageNumbers.map((page, index) => {
@@ -117,13 +111,10 @@ export function LinksPagination({
 					<PaginationNext
 						href="#"
 						onClick={handleNextClick}
-						className={cn(
-							currentPage === totalPages && "pointer-events-none opacity-50"
-						)}
+						className={cn(currentPage === totalPages && "pointer-events-none opacity-50")}
 					/>
 				</PaginationItem>
 			</PaginationContent>
 		</Pagination>
 	);
 }
-

@@ -10,13 +10,13 @@ export function TotalClicksCard({ clicks, isLoading }: TotalClicksCardProps) {
 		return (
 			<Card>
 				<CardHeader>
-					<CardTitle className='text-sm font-semibold uppercase tracking-wider text-muted-foreground'>
+					<CardTitle className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
 						Total Clicks
 					</CardTitle>
 				</CardHeader>
 				<CardContent>
-					<div className='flex items-baseline justify-between gap-4'>
-						<p className='text-3xl font-bold tracking-tight text-foreground'>-</p>
+					<div className="flex items-baseline justify-between gap-4">
+						<p className="text-3xl font-bold tracking-tight text-foreground">-</p>
 					</div>
 				</CardContent>
 			</Card>
@@ -26,13 +26,13 @@ export function TotalClicksCard({ clicks, isLoading }: TotalClicksCardProps) {
 	return (
 		<Card>
 			<CardHeader>
-				<CardTitle className='text-sm font-semibold uppercase tracking-wider text-muted-foreground'>
+				<CardTitle className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
 					Total Clicks
 				</CardTitle>
 			</CardHeader>
 			<CardContent>
-				<div className='flex items-baseline justify-between gap-4'>
-					<p className='text-3xl font-bold tracking-tight text-foreground'>
+				<div className="flex items-baseline justify-between gap-4">
+					<p className="text-3xl font-bold tracking-tight text-foreground">
 						{clicks.toLocaleString()}
 					</p>
 				</div>
@@ -40,4 +40,3 @@ export function TotalClicksCard({ clicks, isLoading }: TotalClicksCardProps) {
 		</Card>
 	);
 }
-

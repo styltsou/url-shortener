@@ -11,10 +11,7 @@ export const formatDateTime = (date: Date | string | null) => {
 	return d.toLocaleString("en-US", DATETIME_FORMAT_OPTIONS);
 };
 
-export const getTimePeriod = (
-	date: Date | string,
-	referenceDate: Date = new Date()
-): string => {
+export const getTimePeriod = (date: Date | string, referenceDate: Date = new Date()): string => {
 	const targetDate = new Date(date);
 	const now = new Date(referenceDate);
 	const diffMs = targetDate.getTime() - now.getTime();
@@ -28,9 +25,7 @@ export const getTimePeriod = (
 	const diffMinutes = Math.floor(diffSeconds / 60);
 	if (diffMinutes < 60) {
 		const period = diffMinutes === 1 ? "minute" : "minutes";
-		return isPast
-			? `${diffMinutes} ${period} ago`
-			: `in ${diffMinutes} ${period}`;
+		return isPast ? `${diffMinutes} ${period} ago` : `in ${diffMinutes} ${period}`;
 	}
 
 	const diffHours = Math.floor(diffSeconds / 3600);
@@ -54,9 +49,7 @@ export const getTimePeriod = (
 	const diffMonths = Math.floor(diffDays / 30);
 	if (diffMonths < 12) {
 		const period = diffMonths === 1 ? "month" : "months";
-		return isPast
-			? `${diffMonths} ${period} ago`
-			: `in ${diffMonths} ${period}`;
+		return isPast ? `${diffMonths} ${period} ago` : `in ${diffMonths} ${period}`;
 	}
 
 	const diffYears = Math.floor(diffDays / 365);

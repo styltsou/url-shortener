@@ -1,4 +1,12 @@
-import { createContext, useContext, useEffect, useRef, useCallback, useState, ReactNode } from "react";
+import {
+	createContext,
+	useContext,
+	useEffect,
+	useRef,
+	useCallback,
+	useState,
+	ReactNode,
+} from "react";
 import {
 	AlertDialog,
 	AlertDialogAction,
@@ -20,6 +28,11 @@ interface BlockNavigationState {
 	blockBackForward?: boolean;
 	onConfirm?: () => void;
 	onCancel?: () => void;
+}
+
+interface PendingNavigation {
+	blocker: BlockNavigationState;
+	shouldGoBack: boolean;
 }
 
 interface NavigationBlockerContextValue {
@@ -50,9 +63,7 @@ export interface NavigationBlockerProviderProps {
  */
 export function NavigationBlockerProvider({ children }: NavigationBlockerProviderProps) {
 	const [blockers, setBlockers] = useState<Map<string, BlockNavigationState>>(new Map());
-	const [showDialog, setShowDialog] = useState(false);
-	const [currentBlocker, setCurrentBlocker] = useState<BlockNavigationState | null>(null);
-	const shouldGoBackRef = useRef(false);
+	const [pendingNav, setPendingNav] = useState<PendingNavigation | null>(null);
 
 	// Get the most relevant blocker (first one that should block)
 	const activeBlocker = Array.from(blockers.values()).find((b) => b.shouldBlock);
@@ -85,12 +96,10 @@ export function NavigationBlockerProvider({ children }: NavigationBlockerProvide
 		const currentUrl = window.location.href;
 		const currentState = window.history.state;
 
-		const handlePopState = (e: PopStateEvent) => {
+		const handlePopState = () => {
 			if (activeBlocker?.shouldBlock) {
 				window.history.pushState(currentState, "", currentUrl);
-				setShowDialog(true);
-				setCurrentBlocker(activeBlocker);
-				shouldGoBackRef.current = true;
+				setPendingNav({ blocker: activeBlocker, shouldGoBack: true });
 			}
 		};
 
@@ -119,23 +128,19 @@ export function NavigationBlockerProvider({ children }: NavigationBlockerProvide
 	}, []);
 
 	const handleConfirm = useCallback(() => {
-		setShowDialog(false);
-		currentBlocker?.onConfirm?.();
-
-		if (shouldGoBackRef.current) {
+		if (!pendingNav) return;
+		pendingNav.blocker.onConfirm?.();
+		if (pendingNav.shouldGoBack) {
 			window.history.back();
-			shouldGoBackRef.current = false;
 		}
-
-		setCurrentBlocker(null);
-	}, [currentBlocker]);
+		setPendingNav(null);
+	}, [pendingNav]);
 
 	const handleCancel = useCallback(() => {
-		setShowDialog(false);
-		shouldGoBackRef.current = false;
-		currentBlocker?.onCancel?.();
-		setCurrentBlocker(null);
-	}, [currentBlocker]);
+		if (!pendingNav) return;
+		pendingNav.blocker.onCancel?.();
+		setPendingNav(null);
+	}, [pendingNav]);
 
 	const contextValue: NavigationBlockerContextValue = {
 		registerBlocker,
@@ -145,26 +150,28 @@ export function NavigationBlockerProvider({ children }: NavigationBlockerProvide
 	return (
 		<NavigationBlockerContext.Provider value={contextValue}>
 			{children}
-			<AlertDialog open={showDialog} onOpenChange={(open) => {
-				if (!open) {
-					handleCancel();
-				}
-			}}>
+			<AlertDialog
+				open={pendingNav !== null}
+				onOpenChange={(open) => {
+					if (!open) {
+						handleCancel();
+					}
+				}}
+			>
 				<AlertDialogContent>
 					<AlertDialogHeader>
-						<AlertDialogTitle>
-							{currentBlocker?.title || "Confirm Navigation"}
-						</AlertDialogTitle>
+						<AlertDialogTitle>{pendingNav?.blocker.title || "Confirm Navigation"}</AlertDialogTitle>
 						<AlertDialogDescription>
-							{currentBlocker?.message || "Are you sure you want to leave? Your changes may be lost."}
+							{pendingNav?.blocker.message ||
+								"Are you sure you want to leave? Your changes may be lost."}
 						</AlertDialogDescription>
 					</AlertDialogHeader>
 					<AlertDialogFooter>
 						<AlertDialogCancel onClick={handleCancel}>
-							{currentBlocker?.cancelButtonLabel || "Cancel"}
+							{pendingNav?.blocker.cancelButtonLabel || "Cancel"}
 						</AlertDialogCancel>
 						<AlertDialogAction onClick={handleConfirm}>
-							{currentBlocker?.confirmButtonLabel || "Leave"}
+							{pendingNav?.blocker.confirmButtonLabel || "Leave"}
 						</AlertDialogAction>
 					</AlertDialogFooter>
 				</AlertDialogContent>
@@ -251,6 +258,7 @@ export interface UseBlockNavigationOptions {
  * };
  * ```
  */
+// eslint-disable-next-line react-refresh/only-export-components
 export function useBlockNavigation(options: UseBlockNavigationOptions) {
 	const context = useContext(NavigationBlockerContext);
 	const blockerIdRef = useRef<string>(`blocker-${Math.random().toString(36).substr(2, 9)}`);
@@ -258,7 +266,7 @@ export function useBlockNavigation(options: UseBlockNavigationOptions) {
 	if (!context) {
 		throw new Error(
 			"useBlockNavigation must be used within a NavigationBlockerProvider. " +
-			"Wrap your app with <NavigationBlockerProvider>."
+				"Wrap your app with <NavigationBlockerProvider>.",
 		);
 	}
 
@@ -276,7 +284,8 @@ export function useBlockNavigation(options: UseBlockNavigationOptions) {
 
 	// Register/unregister blocker when options change
 	useEffect(() => {
-		context.registerBlocker(blockerIdRef.current, {
+		const id = blockerIdRef.current;
+		context.registerBlocker(id, {
 			shouldBlock,
 			title,
 			message,
@@ -289,7 +298,7 @@ export function useBlockNavigation(options: UseBlockNavigationOptions) {
 		});
 
 		return () => {
-			context.unregisterBlocker(blockerIdRef.current);
+			context.unregisterBlocker(id);
 		};
 	}, [
 		context,

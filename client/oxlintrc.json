@@ -1,0 +1,12 @@
+{
+  "plugins": ["typescript", "react", "unicorn"],
+  "env": {
+    "browser": true
+  },
+  "rules": {
+    "no-unused-vars": "error",
+    "no-constant-binary-expression": "error",
+    "typescript/no-explicit-any": "warn"
+  },
+  "ignorePatterns": ["dist", "routeTree.gen.ts"]
+}

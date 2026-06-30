@@ -12,9 +12,14 @@ export interface ApiErrorResponse {
  * Custom error class for API errors
  */
 export class ApiError extends Error {
-	constructor(public status: number, public code?: string, message?: string) {
+	status: number;
+	code?: string;
+
+	constructor(status: number, code?: string, message?: string) {
 		super(message || `HTTP error! status: ${status}`);
 		this.name = "ApiError";
+		this.status = status;
+		this.code = code;
 	}
 }
 
@@ -24,14 +29,14 @@ export class ApiError extends Error {
 async function apiFetch<T>(
 	endpoint: string,
 	options: RequestInit = {},
-	token: string | null
+	token: string | null,
 ): Promise<T> {
 	const baseUrl = getApiBaseUrl();
 	const url = `${baseUrl}${endpoint}`;
 
-	const headers: HeadersInit = {
+	const headers: Record<string, string> = {
 		"Content-Type": "application/json",
-		...options.headers,
+		...(options.headers as Record<string, string> | undefined),
 	};
 
 	if (token) {
@@ -49,8 +54,7 @@ async function apiFetch<T>(
 
 		try {
 			const error: ApiErrorResponse = await response.json();
-			errorMessage =
-				error.error?.detail || error.error?.message || errorMessage;
+			errorMessage = error.error?.detail || error.error?.message || errorMessage;
 			errorCode = error.error?.code;
 		} catch {
 			// If response is not JSON, use default error message
@@ -74,40 +78,29 @@ async function apiFetch<T>(
  * should type T as the full server response shape (e.g. { data: Link }).
  */
 export const apiClient = {
-	async get<T>(
-		endpoint: string,
-		token: string | null
-	): Promise<T> {
+	async get<T>(endpoint: string, token: string | null): Promise<T> {
 		return apiFetch<T>(endpoint, { method: "GET" }, token);
 	},
 
-	async post<T>(
-		endpoint: string,
-		body: unknown,
-		token: string | null
-	): Promise<T> {
+	async post<T>(endpoint: string, body: unknown, token: string | null): Promise<T> {
 		return apiFetch<T>(
 			endpoint,
 			{
 				method: "POST",
 				body: JSON.stringify(body),
 			},
-			token
+			token,
 		);
 	},
 
-	async patch<T>(
-		endpoint: string,
-		body: unknown,
-		token: string | null
-	): Promise<T> {
+	async patch<T>(endpoint: string, body: unknown, token: string | null): Promise<T> {
 		return apiFetch<T>(
 			endpoint,
 			{
 				method: "PATCH",
 				body: JSON.stringify(body),
 			},
-			token
+			token,
 		);
 	},
 

@@ -32,21 +32,21 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 	];
 
 	return (
-		<Sidebar collapsible='icon' {...props}>
+		<Sidebar collapsible="icon" {...props}>
 			<SidebarHeader>
 				<SidebarMenu>
 					<SidebarMenuItem>
 						<SidebarMenuButton
-							size='lg'
+							size="lg"
 							asChild
-							className='data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground hover:bg-transparent hover:text-inherit active:bg-transparent active:text-inherit'
+							className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground hover:bg-transparent hover:text-inherit active:bg-transparent active:text-inherit"
 						>
-							<Link to='/'>
-								<div className='flex aspect-square size-8 items-center justify-center rounded-lg'>
-									<LinkIcon className='size-4' />
+							<Link to="/">
+								<div className="flex aspect-square size-8 items-center justify-center rounded-lg">
+									<LinkIcon className="size-4" />
 								</div>
-								<div className='grid flex-1 text-left text-sm leading-tight'>
-									<span className='truncate font-semibold'>link4.it</span>
+								<div className="grid flex-1 text-left text-sm leading-tight">
+									<span className="truncate font-semibold">link4.it</span>
 								</div>
 							</Link>
 						</SidebarMenuButton>

@@ -1,11 +1,7 @@
 import { ChevronRight, type LucideIcon } from "lucide-react";
 import { Link, useLocation } from "@tanstack/react-router";
 
-import {
-	Collapsible,
-	CollapsibleContent,
-	CollapsibleTrigger,
-} from "@/components/ui/collapsible";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import {
 	SidebarGroup,
 	SidebarMenu,
@@ -45,14 +41,14 @@ export function NavMain({
 								key={item.title}
 								asChild
 								defaultOpen={isActive}
-								className='group/collapsible'
+								className="group/collapsible"
 							>
 								<SidebarMenuItem>
 									<CollapsibleTrigger asChild>
 										<SidebarMenuButton tooltip={item.title} isActive={isActive}>
 											{item.icon && <item.icon />}
 											<span>{item.title}</span>
-											<ChevronRight className='ml-auto transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90' />
+											<ChevronRight className="ml-auto transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
 										</SidebarMenuButton>
 									</CollapsibleTrigger>
 									<CollapsibleContent>
@@ -78,11 +74,7 @@ export function NavMain({
 
 					return (
 						<SidebarMenuItem key={item.title}>
-							<SidebarMenuButton
-								asChild
-								tooltip={item.title}
-								isActive={isActive}
-							>
+							<SidebarMenuButton asChild tooltip={item.title} isActive={isActive}>
 								<Link to={item.url}>
 									{item.icon && <item.icon />}
 									<span>{item.title}</span>

@@ -27,4 +27,3 @@ export function StatusFilter({ value, onValueChange }: StatusFilterProps) {
 		</Select>
 	);
 }
-

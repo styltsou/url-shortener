@@ -12,7 +12,7 @@ export function DashboardChart({ data, isLoading }: DashboardChartProps) {
 		return (
 			<Card>
 				<CardHeader>
-					<CardTitle className='text-sm font-semibold uppercase tracking-wider text-muted-foreground'>
+					<CardTitle className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
 						Clicks Over Time
 					</CardTitle>
 				</CardHeader>
@@ -30,7 +30,7 @@ export function DashboardChart({ data, isLoading }: DashboardChartProps) {
 	return (
 		<Card>
 			<CardHeader>
-				<CardTitle className='text-sm font-semibold uppercase tracking-wider text-muted-foreground'>
+				<CardTitle className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
 					Clicks Over Time
 				</CardTitle>
 			</CardHeader>

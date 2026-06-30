@@ -23,7 +23,7 @@ export function useAnalytics(shortcode: string) {
 			const token = await getToken();
 			const response = await apiClient.get<{ data: AnalyticsData }>(
 				`/api/v1/links/${shortcode}/analytics`,
-				token
+				token,
 			);
 			return response.data;
 		},

@@ -5,12 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { TagCombobox } from "./tag-combobox";
-import {
-	useTags,
-	useCreateTag,
-	useAddTagsToLink,
-	useRemoveTagsFromLink,
-} from "@/hooks/use-tags";
+import { useTags, useCreateTag, useAddTagsToLink, useRemoveTagsFromLink } from "@/hooks/use-tags";
 import type { Url, Tag } from "@/types/url";
 
 interface TagsSectionProps {
@@ -94,7 +89,7 @@ export function TagsSection({ url }: TagsSectionProps) {
 			} else {
 				setIsEditing(false);
 			}
-		} catch (error) {
+		} catch {
 			// Error is handled by the hooks
 		}
 	};
@@ -104,91 +99,75 @@ export function TagsSection({ url }: TagsSectionProps) {
 		setIsEditing(false);
 	};
 
-	const isPending =
-		addTags.isPending || removeTags.isPending || createTag.isPending;
+	const isPending = addTags.isPending || removeTags.isPending || createTag.isPending;
 
 	return (
 		<Card>
 			<CardHeader>
-				<CardTitle className='text-sm font-semibold uppercase tracking-wider flex items-center gap-2 text-muted-foreground'>
-					<TagIcon className='w-4 h-4' /> Tags
+				<CardTitle className="text-sm font-semibold uppercase tracking-wider flex items-center gap-2 text-muted-foreground">
+					<TagIcon className="w-4 h-4" /> Tags
 				</CardTitle>
 			</CardHeader>
 			<CardContent>
 				{isEditing ? (
-					<div className='space-y-3'>
-						<div className='flex flex-wrap gap-2'>
+					<div className="space-y-3">
+						<div className="flex flex-wrap gap-2">
 							{selectedTags.map((tag) => (
-								<Badge
-									key={tag.id}
-									variant='outline'
-									className='pr-1'
-								>
+								<Badge key={tag.id} variant="outline" className="pr-1">
 									{tag.name}
 									<button
-										type='button'
+										type="button"
 										onClick={() => handleTagRemove(tag.id)}
-										className='ml-0.5 hover:bg-muted rounded-sm p-0.5 transition-colors'
+										className="ml-0.5 hover:bg-muted rounded-sm p-0.5 transition-colors"
 										disabled={isPending}
 									>
-										<X className='w-3 h-3' />
+										<X className="w-3 h-3" />
 									</button>
 								</Badge>
 							))}
 						</div>
 						{isLoadingTags ? (
-							<div className='text-sm text-muted-foreground'>
-								Loading tags...
-							</div>
+							<div className="text-sm text-muted-foreground">Loading tags...</div>
 						) : (
 							<TagCombobox
 								availableTags={availableTagsForUI}
 								selectedTags={selectedTags}
 								onTagSelect={handleTagSelect}
 								onCreateTag={handleCreateTag}
-								placeholder='Add a tag...'
-								className='w-full'
+								placeholder="Add a tag..."
+								className="w-full"
 							/>
 						)}
-						<div className='flex gap-2'>
-							<Button
-								variant='secondary'
-								size='sm'
-								onClick={handleCancel}
-								disabled={isPending}
-							>
-								<X className='w-4 h-4 mr-1' />
+						<div className="flex gap-2">
+							<Button variant="secondary" size="sm" onClick={handleCancel} disabled={isPending}>
+								<X className="w-4 h-4 mr-1" />
 								Cancel
 							</Button>
-							<Button size='sm' onClick={handleSave} disabled={isPending}>
+							<Button size="sm" onClick={handleSave} disabled={isPending}>
 								{isPending ? (
-									<Spinner className='w-4 h-4 mr-1' />
+									<Spinner className="w-4 h-4 mr-1" />
 								) : (
-									<Save className='w-4 h-4 mr-1' />
+									<Save className="w-4 h-4 mr-1" />
 								)}
 								{isPending ? "Saving" : "Save"}
 							</Button>
 						</div>
 					</div>
 				) : (
-					<div className='flex items-center justify-between'>
-						<div className='flex flex-wrap gap-2 flex-1'>
+					<div className="flex items-center justify-between">
+						<div className="flex flex-wrap gap-2 flex-1">
 							{url.tags && url.tags.length > 0 ? (
 								url.tags.map((tag) => (
-									<Badge key={tag.id} variant='outline'>
+									<Badge key={tag.id} variant="outline">
 										{tag.name}
 									</Badge>
 								))
 							) : (
-								<p className='text-sm text-muted-foreground'>No tags</p>
+								<p className="text-sm text-muted-foreground">No tags</p>
 							)}
 						</div>
-						<Button
-							variant='ghost'
-							size='sm'
-							onClick={() => setIsEditing(true)}
-						>
-							<Edit2 className='w-4 h-4 mr-1' />
+						<Button variant="ghost" size="sm" onClick={() => setIsEditing(true)}>
+							<Edit2 className="w-4 h-4 mr-1" />
 							Edit
 						</Button>
 					</div>

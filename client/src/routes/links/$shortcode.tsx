@@ -43,13 +43,13 @@ function LinkDetailPage() {
 	}
 
 	if (!isSignedIn) {
-		return <Navigate to='/login' />;
+		return <Navigate to="/login" />;
 	}
 
 	if (isLoadingLinks) {
 		return (
-			<main className='p-4 sm:p-6'>
-				<div className='max-w-6xl mx-auto'>
+			<main className="p-4 sm:p-6">
+				<div className="max-w-6xl mx-auto">
 					<LinkPageSkeleton />
 				</div>
 			</main>
@@ -58,41 +58,36 @@ function LinkDetailPage() {
 
 	if (!url) {
 		return (
-			<main className='p-4 sm:p-6'>
-				<div className='max-w-6xl mx-auto text-center py-20'>
-					<h1 className='text-3xl font-bold mb-4'>Link not found</h1>
-					<Button onClick={() => navigate({ to: "/links" })}>
-						Back to links
-					</Button>
+			<main className="p-4 sm:p-6">
+				<div className="max-w-6xl mx-auto text-center py-20">
+					<h1 className="text-3xl font-bold mb-4">Link not found</h1>
+					<Button onClick={() => navigate({ to: "/links" })}>Back to links</Button>
 				</div>
 			</main>
 		);
 	}
 
 	return (
-		<main className='p-4 sm:p-6'>
-			<div className='max-w-6xl mx-auto'>
-				<div className='mb-6'>
-					<div className='flex items-center justify-between gap-4'>
-						<div className='flex-1'>
+		<main className="p-4 sm:p-6">
+			<div className="max-w-6xl mx-auto">
+				<div className="mb-6">
+					<div className="flex items-center justify-between gap-4">
+						<div className="flex-1">
 							<LinkHeader url={url} />
 						</div>
-						<div className='flex items-center'>
+						<div className="flex items-center">
 							<LinkActions url={url} />
 						</div>
 					</div>
 				</div>
 
-				<div className='grid grid-cols-1 lg:grid-cols-3 gap-6'>
-					<div className='lg:col-span-2 space-y-6'>
+				<div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+					<div className="lg:col-span-2 space-y-6">
 						<LinkDetailsCard url={url} />
-						<PerformanceChartCard
-							clicksData={clicksData}
-							isLoading={isLoadingAnalytics}
-						/>
+						<PerformanceChartCard clicksData={clicksData} isLoading={isLoadingAnalytics} />
 					</div>
 
-					<div className='grid grid-cols-2 lg:grid-cols-1 gap-6'>
+					<div className="grid grid-cols-2 lg:grid-cols-1 gap-6">
 						<TotalClicksCard
 							clicks={analyticsData?.total_clicks ?? url.clicks}
 							isLoading={isLoadingAnalytics}

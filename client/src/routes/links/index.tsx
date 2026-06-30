@@ -66,14 +66,14 @@ function LinksPage() {
 	}
 
 	if (!isSignedIn) {
-		return <Navigate to='/login' />;
+		return <Navigate to="/login" />;
 	}
 
 	const handleShorten = async (
 		originalUrl: string,
 		customCode?: string,
 		expirationDate?: string,
-		tagIds?: string[]
+		tagIds?: string[],
 	) => {
 		const createdLink = await createLink.mutateAsync({
 			url: originalUrl,
@@ -99,26 +99,21 @@ function LinksPage() {
 	}
 
 	return (
-		<main className='py-12 px-4 sm:px-6'>
-			<div className='max-w-4xl mx-auto'>
-				<NewUrlForm
-					onShorten={handleShorten}
-					isLoading={createLink.isPending}
-				/>
+		<main className="py-12 px-4 sm:px-6">
+			<div className="max-w-4xl mx-auto">
+				<NewUrlForm onShorten={handleShorten} isLoading={createLink.isPending} />
 
 				{isLoading || isLoadingTags ? (
 					<LinksPageSkeleton />
 				) : (
 					<>
-						<div className='mb-4'>
+						<div className="mb-4">
 							<LinksHeader
 								isLoading={isLoading}
 								totalCount={pagination?.total ?? 0}
-								hasActiveFilters={
-									selectedTagIds.length > 0 || statusFilter !== "all"
-								}
+								hasActiveFilters={selectedTagIds.length > 0 || statusFilter !== "all"}
 							/>
-							<div className='mt-3 flex items-center justify-between gap-4'>
+							<div className="mt-3 flex items-center justify-between gap-4">
 								{availableTags.length > 0 && (
 									<TagFilter
 										availableTags={availableTags}
@@ -126,33 +121,27 @@ function LinksPage() {
 										onSelectionChange={handleTagFilterChange}
 									/>
 								)}
-								<div className='ml-auto'>
-									<StatusFilter
-										value={statusFilter}
-										onValueChange={handleStatusFilterChange}
-									/>
+								<div className="ml-auto">
+									<StatusFilter value={statusFilter} onValueChange={handleStatusFilterChange} />
 								</div>
 							</div>
 						</div>
 
-						<div className='space-y-2'>
+						<div className="space-y-2">
 							{urls.map((url) => (
 								<UrlCard key={url.id} url={url} />
 							))}
-							{urls.length === 0 &&
-								(selectedTagIds.length > 0 || statusFilter !== "all") && (
-									<div className='text-center py-12 text-muted-foreground'>
-										<p className='text-sm'>
-											No links match the selected filters.
-										</p>
-									</div>
-								)}
-							{urls.length === 0 &&
-								selectedTagIds.length === 0 &&
-								statusFilter === "all" && <EmptyLinksState />}
+							{urls.length === 0 && (selectedTagIds.length > 0 || statusFilter !== "all") && (
+								<div className="text-center py-12 text-muted-foreground">
+									<p className="text-sm">No links match the selected filters.</p>
+								</div>
+							)}
+							{urls.length === 0 && selectedTagIds.length === 0 && statusFilter === "all" && (
+								<EmptyLinksState />
+							)}
 						</div>
 						{pagination && (
-							<div className='mt-6 flex items-center justify-between'>
+							<div className="mt-6 flex items-center justify-between">
 								{pagination.total_pages > 1 ? (
 									<LinksPagination
 										currentPage={pagination.page}
@@ -162,10 +151,7 @@ function LinksPage() {
 								) : (
 									<div /> // Empty div to maintain flex layout
 								)}
-								<PageSizeSelector
-									value={limit}
-									onValueChange={handleLimitChange}
-								/>
+								<PageSizeSelector value={limit} onValueChange={handleLimitChange} />
 							</div>
 						)}
 					</>

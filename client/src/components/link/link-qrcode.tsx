@@ -33,20 +33,20 @@ export function LinkQRCode({ shortcode }: LinkQRCodeProps) {
 	return (
 		<Card>
 			<CardHeader>
-				<CardTitle className='text-sm font-semibold uppercase tracking-wider text-muted-foreground'>
+				<CardTitle className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
 					QR Code
 				</CardTitle>
 			</CardHeader>
-			<CardContent className='flex flex-col items-center gap-4'>
+			<CardContent className="flex flex-col items-center gap-4">
 				<img
 					src={qrUrl}
 					alt={`QR code for link ${shortcode}`}
-					className='rounded-lg'
+					className="rounded-lg"
 					width={size}
 					height={size}
 				/>
-				<Button variant='outline' size='sm' onClick={handleDownload}>
-					<Download className='w-4 h-4 mr-2' />
+				<Button variant="outline" size="sm" onClick={handleDownload}>
+					<Download className="w-4 h-4 mr-2" />
 					Download
 				</Button>
 			</CardContent>

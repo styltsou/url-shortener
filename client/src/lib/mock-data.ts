@@ -23,13 +23,7 @@ export const INITIAL_MOCK_URLS: Url[] = [
 		createdAt: new Date(Date.now() - 1000 * 60 * 60 * 24 * 2),
 		expiresAt: null,
 		clicks: 1245,
-		tags: [
-			MOCK_TAGS[0],
-			MOCK_TAGS[1],
-			MOCK_TAGS[6],
-			MOCK_TAGS[9],
-			MOCK_TAGS[10],
-		],
+		tags: [MOCK_TAGS[0], MOCK_TAGS[1], MOCK_TAGS[6], MOCK_TAGS[9], MOCK_TAGS[10]],
 	},
 	{
 		id: "2",
@@ -47,13 +41,7 @@ export const INITIAL_MOCK_URLS: Url[] = [
 		createdAt: new Date(Date.now() - 1000 * 60 * 60 * 24 * 10),
 		expiresAt: new Date(Date.now() - 1000 * 60 * 60 * 24),
 		clicks: 890,
-		tags: [
-			MOCK_TAGS[2],
-			MOCK_TAGS[5],
-			MOCK_TAGS[7],
-			MOCK_TAGS[11],
-			MOCK_TAGS[12],
-		],
+		tags: [MOCK_TAGS[2], MOCK_TAGS[5], MOCK_TAGS[7], MOCK_TAGS[11], MOCK_TAGS[12]],
 	},
 	{
 		id: "4",

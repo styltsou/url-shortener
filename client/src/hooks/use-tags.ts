@@ -34,11 +34,7 @@ export function useCreateTag() {
 	return useMutation({
 		mutationFn: async (name: string) => {
 			const token = await getToken();
-			const response = await apiClient.post<{ data: Tag }>(
-				"/api/v1/tags",
-				{ name },
-				token
-			);
+			const response = await apiClient.post<{ data: Tag }>("/api/v1/tags", { name }, token);
 			return response.data;
 		},
 		onSuccess: () => {
@@ -57,19 +53,9 @@ export function useAddTagsToLink() {
 	const queryClient = useQueryClient();
 
 	return useMutation({
-		mutationFn: async ({
-			linkId,
-			tagIds,
-		}: {
-			linkId: string;
-			tagIds: string[];
-		}) => {
+		mutationFn: async ({ linkId, tagIds }: { linkId: string; tagIds: string[] }) => {
 			const token = await getToken();
-			await apiClient.post(
-				`/api/v1/links/${linkId}/tags`,
-				{ tag_ids: tagIds },
-				token
-			);
+			await apiClient.post(`/api/v1/links/${linkId}/tags`, { tag_ids: tagIds }, token);
 		},
 		onSuccess: (_, variables) => {
 			queryClient.invalidateQueries({ queryKey: linkKeys.lists() });
@@ -90,19 +76,9 @@ export function useRemoveTagsFromLink() {
 	const queryClient = useQueryClient();
 
 	return useMutation({
-		mutationFn: async ({
-			linkId,
-			tagIds,
-		}: {
-			linkId: string;
-			tagIds: string[];
-		}) => {
+		mutationFn: async ({ linkId, tagIds }: { linkId: string; tagIds: string[] }) => {
 			const token = await getToken();
-			await apiClient.post(
-				`/api/v1/links/${linkId}/tags/remove`,
-				{ tag_ids: tagIds },
-				token
-			);
+			await apiClient.post(`/api/v1/links/${linkId}/tags/remove`, { tag_ids: tagIds }, token);
 		},
 		onSuccess: (_, variables) => {
 			queryClient.invalidateQueries({ queryKey: linkKeys.lists() });

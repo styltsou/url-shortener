@@ -20,11 +20,7 @@ interface TagFilterProps {
 	onSelectionChange: (tagIds: string[]) => void;
 }
 
-export function TagFilter({
-	availableTags,
-	selectedTagIds,
-	onSelectionChange,
-}: TagFilterProps) {
+export function TagFilter({ availableTags, selectedTagIds, onSelectionChange }: TagFilterProps) {
 	const [open, setOpen] = useState(false);
 	const [searchValue, setSearchValue] = useState("");
 
@@ -35,13 +31,9 @@ export function TagFilter({
 		}
 	}, [open]);
 
-	const selectedTags = availableTags.filter((tag) =>
-		selectedTagIds.includes(tag.id)
-	);
+	const selectedTags = availableTags.filter((tag) => selectedTagIds.includes(tag.id));
 
-	const availableTagsForSelection = availableTags.filter(
-		(tag) => !selectedTagIds.includes(tag.id)
-	);
+	const availableTagsForSelection = availableTags.filter((tag) => !selectedTagIds.includes(tag.id));
 
 	const filteredAvailableTags = availableTagsForSelection.filter((tag) => {
 		if (!searchValue.trim()) return true;
@@ -73,18 +65,12 @@ export function TagFilter({
 					<Button
 						variant="outline"
 						size="sm"
-						className={cn(
-							"h-8 gap-2",
-							selectedTagIds.length > 0 && "bg-accent"
-						)}
+						className={cn("h-8 gap-2", selectedTagIds.length > 0 && "bg-accent")}
 					>
 						<Filter className="h-3.5 w-3.5" />
 						<span className="text-xs">Filter by tags</span>
 						{selectedTagIds.length > 0 && (
-							<Badge
-								variant="secondary"
-								className="ml-1 h-4 px-1.5 text-[10px] font-semibold"
-							>
+							<Badge variant="secondary" className="ml-1 h-4 px-1.5 text-[10px] font-semibold">
 								{selectedTagIds.length}
 							</Badge>
 						)}
@@ -100,9 +86,7 @@ export function TagFilter({
 						/>
 						<CommandList className="[&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-border [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:border-2 [&::-webkit-scrollbar-thumb]:border-transparent [&::-webkit-scrollbar-thumb]:bg-clip-padding hover:[&::-webkit-scrollbar-thumb]:bg-muted-foreground/30 [&::-webkit-scrollbar-thumb]:transition-colors">
 							<CommandEmpty>
-								{searchValue.trim()
-									? "No tags found"
-									: "No tags available"}
+								{searchValue.trim() ? "No tags found" : "No tags available"}
 							</CommandEmpty>
 							{filteredAvailableTags.length > 0 && (
 								<CommandGroup>
@@ -127,11 +111,7 @@ export function TagFilter({
 			{selectedTags.length > 0 && (
 				<>
 					{selectedTags.map((tag) => (
-						<Badge
-							key={tag.id}
-							variant="outline"
-							className="pr-1 gap-1.5"
-						>
+						<Badge key={tag.id} variant="outline" className="pr-1 gap-1.5">
 							{tag.name}
 							<button
 								type="button"
@@ -142,12 +122,7 @@ export function TagFilter({
 							</button>
 						</Badge>
 					))}
-					<Button
-						variant="ghost"
-						size="sm"
-						onClick={handleClearAll}
-						className="h-6 px-2 text-xs"
-					>
+					<Button variant="ghost" size="sm" onClick={handleClearAll} className="h-6 px-2 text-xs">
 						Clear all
 					</Button>
 				</>
@@ -155,4 +130,3 @@ export function TagFilter({
 		</div>
 	);
 }
-

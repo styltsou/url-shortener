@@ -1,22 +1,9 @@
 import { useState, useEffect } from "react";
-import {
-	Trash2,
-	Power,
-	PowerOff,
-	MoreVertical as MoreVerticalIcon,
-	Pencil,
-	Edit2,
-	Save,
-	X,
-} from "lucide-react";
+import { Trash2, Power, PowerOff, MoreVertical as MoreVerticalIcon, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
-import {
-	Tooltip,
-	TooltipContent,
-	TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
 	DropdownMenu,
 	DropdownMenuContent,
@@ -75,7 +62,7 @@ export function LinkActions({ url }: LinkActionsProps) {
 			setDeleteDialogOpen(false);
 			// Navigate only after successful deletion
 			navigate({ to: "/links", replace: true });
-		} catch (error) {
+		} catch {
 			// Error is handled by the hook, keep dialog open so user can see the error
 		}
 	};
@@ -89,7 +76,7 @@ export function LinkActions({ url }: LinkActionsProps) {
 				},
 			});
 			setDeactivateDialogOpen(false);
-		} catch (error) {
+		} catch {
 			// Error is handled by the hook
 		}
 	};
@@ -123,7 +110,7 @@ export function LinkActions({ url }: LinkActionsProps) {
 			if (currentPath === `/links/${url.shortCode}`) {
 				navigate({ to: `/links/${shortcode.trim()}`, replace: true });
 			}
-		} catch (error) {
+		} catch {
 			// Error is handled by the hook
 		}
 	};
@@ -138,8 +125,7 @@ export function LinkActions({ url }: LinkActionsProps) {
 	useBlockNavigation({
 		shouldBlock: shortcodeDialogOpen && shortcodeHasChanged,
 		title: "Unsaved Changes",
-		message:
-			"You have unsaved changes to the shortcode. Are you sure you want to leave?",
+		message: "You have unsaved changes to the shortcode. Are you sure you want to leave?",
 		confirmButtonLabel: "Leave",
 		cancelButtonLabel: "Stay",
 	});
@@ -152,13 +138,13 @@ export function LinkActions({ url }: LinkActionsProps) {
 	}, [shortcodeDialogOpen, url.shortCode]);
 
 	return (
-		<div className='flex gap-2'>
+		<div className="flex gap-2">
 			<DropdownMenu>
 				<Tooltip>
 					<TooltipTrigger asChild>
 						<DropdownMenuTrigger asChild>
-							<Button variant='secondary'>
-								<MoreVerticalIcon className='w-4 h-4' />
+							<Button variant="secondary">
+								<MoreVerticalIcon className="w-4 h-4" />
 							</Button>
 						</DropdownMenuTrigger>
 					</TooltipTrigger>
@@ -166,22 +152,19 @@ export function LinkActions({ url }: LinkActionsProps) {
 						<p>More options</p>
 					</TooltipContent>
 				</Tooltip>
-				<DropdownMenuContent align='end'>
+				<DropdownMenuContent align="end">
 					<DropdownMenuItem
 						onSelect={(e) => {
 							e.preventDefault();
 							setShortcodeDialogOpen(true);
 						}}
 					>
-						<Pencil className='w-4 h-4 mr-2' />
+						<Pencil className="w-4 h-4 mr-2" />
 						Change shortcode
 					</DropdownMenuItem>
 					<DropdownMenuSeparator />
 					{!isEffectivelyInactive ? (
-						<AlertDialog
-							open={deactivateDialogOpen}
-							onOpenChange={setDeactivateDialogOpen}
-						>
+						<AlertDialog open={deactivateDialogOpen} onOpenChange={setDeactivateDialogOpen}>
 							<AlertDialogTrigger asChild>
 								<DropdownMenuItem
 									onSelect={(e) => {
@@ -189,7 +172,7 @@ export function LinkActions({ url }: LinkActionsProps) {
 										setDeactivateDialogOpen(true);
 									}}
 								>
-									<PowerOff className='w-4 h-4 mr-2' />
+									<PowerOff className="w-4 h-4 mr-2" />
 									Deactivate
 								</DropdownMenuItem>
 							</AlertDialogTrigger>
@@ -201,26 +184,24 @@ export function LinkActions({ url }: LinkActionsProps) {
 										<strong>
 											{SHORT_DOMAIN}/{url.shortCode}
 										</strong>
-										. The link will stop working and redirects will fail. You
-										can reactivate it at any time.
+										. The link will stop working and redirects will fail. You can reactivate it at
+										any time.
 									</AlertDialogDescription>
 								</AlertDialogHeader>
 								<AlertDialogFooter>
 									<AlertDialogCancel>Cancel</AlertDialogCancel>
-									<AlertDialogAction onClick={handleToggleActive}>
-										Deactivate
-									</AlertDialogAction>
+									<AlertDialogAction onClick={handleToggleActive}>Deactivate</AlertDialogAction>
 								</AlertDialogFooter>
 							</AlertDialogContent>
 						</AlertDialog>
 					) : isExpired ? (
 						<DropdownMenuItem disabled>
-							<PowerOff className='w-4 h-4 mr-2' />
+							<PowerOff className="w-4 h-4 mr-2" />
 							Expired (cannot activate)
 						</DropdownMenuItem>
 					) : (
 						<DropdownMenuItem onClick={handleToggleActive}>
-							<Power className='w-4 h-4 mr-2' />
+							<Power className="w-4 h-4 mr-2" />
 							Activate
 						</DropdownMenuItem>
 					)}
@@ -230,9 +211,9 @@ export function LinkActions({ url }: LinkActionsProps) {
 							e.preventDefault();
 							setDeleteDialogOpen(true);
 						}}
-						variant='destructive'
+						variant="destructive"
 					>
-						<Trash2 className='w-4 h-4 mr-2' />
+						<Trash2 className="w-4 h-4 mr-2" />
 						Delete link
 					</DropdownMenuItem>
 				</DropdownMenuContent>
@@ -251,8 +232,7 @@ export function LinkActions({ url }: LinkActionsProps) {
 					<AlertDialogHeader>
 						<AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
 						<AlertDialogDescription>
-							This action cannot be undone. This will permanently delete the
-							short URL{" "}
+							This action cannot be undone. This will permanently delete the short URL{" "}
 							<strong>
 								{SHORT_DOMAIN}/{url.shortCode}
 							</strong>{" "}
@@ -260,17 +240,15 @@ export function LinkActions({ url }: LinkActionsProps) {
 						</AlertDialogDescription>
 					</AlertDialogHeader>
 					<AlertDialogFooter>
-						<AlertDialogCancel disabled={deleteLink.isPending}>
-							Cancel
-						</AlertDialogCancel>
+						<AlertDialogCancel disabled={deleteLink.isPending}>Cancel</AlertDialogCancel>
 						<AlertDialogAction
 							onClick={handleDelete}
 							disabled={deleteLink.isPending}
-							className='bg-destructive text-white hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40 dark:bg-destructive/60'
+							className="bg-destructive text-white hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40 dark:bg-destructive/60"
 						>
 							{deleteLink.isPending ? (
 								<>
-									<Spinner className='w-4 h-4 mr-2' />
+									<Spinner className="w-4 h-4 mr-2" />
 									Deleting
 								</>
 							) : (
@@ -285,8 +263,8 @@ export function LinkActions({ url }: LinkActionsProps) {
 					<DialogHeader>
 						<DialogTitle>Change shortcode</DialogTitle>
 						<DialogDescription>
-							Change the shortcode for this link. The new shortcode must be
-							unique and 20 characters or less.
+							Change the shortcode for this link. The new shortcode must be unique and 20 characters
+							or less.
 						</DialogDescription>
 					</DialogHeader>
 					<form
@@ -295,33 +273,29 @@ export function LinkActions({ url }: LinkActionsProps) {
 							handleSaveShortcode();
 						}}
 					>
-						<div className='space-y-4 py-4'>
-							<div className='flex items-center gap-2'>
-								<span className='text-sm text-muted-foreground'>
-									{SHORT_DOMAIN}/
-								</span>
+						<div className="space-y-4 py-4">
+							<div className="flex items-center gap-2">
+								<span className="text-sm text-muted-foreground">{SHORT_DOMAIN}/</span>
 								<Input
 									value={shortcode}
 									onChange={(e) => setShortcode(e.target.value)}
-									placeholder='Enter shortcode'
+									placeholder="Enter shortcode"
 									maxLength={20}
-									className='flex-1'
+									className="flex-1"
 								/>
 							</div>
 						</div>
 						<DialogFooter>
 							<Button
-								type='button'
-								variant='outline'
+								type="button"
+								variant="outline"
 								onClick={handleCancelShortcode}
 								disabled={updateLink.isPending}
 							>
 								Cancel
 							</Button>
-							<Button type='submit' disabled={updateLink.isPending}>
-								{updateLink.isPending ? (
-									<Spinner className='w-4 h-4 mr-1' />
-								) : null}
+							<Button type="submit" disabled={updateLink.isPending}>
+								{updateLink.isPending ? <Spinner className="w-4 h-4 mr-1" /> : null}
 								{updateLink.isPending ? "Saving" : "Save"}
 							</Button>
 						</DialogFooter>

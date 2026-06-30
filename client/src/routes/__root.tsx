@@ -1,8 +1,4 @@
-import {
-	createRootRoute,
-	Outlet,
-	useRouterState,
-} from "@tanstack/react-router";
+import { createRootRoute, Outlet, useRouterState } from "@tanstack/react-router";
 import { ClerkProvider } from "@clerk/clerk-react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/sonner";
@@ -42,20 +38,14 @@ export const Route = createRootRoute({
 function RootComponent() {
 	const router = useRouterState();
 	const isAuthPage =
-		router.location.pathname === "/login" ||
-		router.location.pathname === "/sso-callback";
+		router.location.pathname === "/login" || router.location.pathname === "/sso-callback";
 
 	return (
 		<ClerkProvider publishableKey={getClerkPublishableKey()}>
-			<ThemeProvider
-				attribute='class'
-				defaultTheme='system'
-				enableSystem
-				disableTransitionOnChange
-			>
+			<ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
 				<QueryClientProvider client={queryClient}>
 					<NavigationBlockerProvider>
-						<div className='min-h-screen bg-background font-sans text-foreground selection:bg-primary/20 selection:text-primary-foreground'>
+						<div className="min-h-screen bg-background font-sans text-foreground selection:bg-primary/20 selection:text-primary-foreground">
 							{isAuthPage ? (
 								<>
 									<Outlet />

@@ -49,7 +49,7 @@ export function ShortcodeSection({ url }: ShortcodeSectionProps) {
 			if (currentPath === `/links/${url.shortCode}`) {
 				navigate({ to: `/links/${shortcode.trim()}`, replace: true });
 			}
-		} catch (error) {
+		} catch {
 			// Error is handled by the hook
 		}
 	};
@@ -62,63 +62,51 @@ export function ShortcodeSection({ url }: ShortcodeSectionProps) {
 	return (
 		<Card>
 			<CardHeader>
-				<CardTitle className='text-sm font-semibold uppercase tracking-wider flex items-center gap-2 text-muted-foreground'>
-					<Hash className='w-4 h-4' /> Shortcode
+				<CardTitle className="text-sm font-semibold uppercase tracking-wider flex items-center gap-2 text-muted-foreground">
+					<Hash className="w-4 h-4" /> Shortcode
 				</CardTitle>
 			</CardHeader>
 			<CardContent>
 				{isEditing ? (
-					<div className='space-y-3'>
-						<div className='flex items-center gap-2'>
-							<span className='text-sm text-muted-foreground'>
-								{SHORT_DOMAIN}/
-							</span>
+					<div className="space-y-3">
+						<div className="flex items-center gap-2">
+							<span className="text-sm text-muted-foreground">{SHORT_DOMAIN}/</span>
 							<Input
 								value={shortcode}
 								onChange={(e) => setShortcode(e.target.value)}
-								placeholder='Enter shortcode'
+								placeholder="Enter shortcode"
 								maxLength={20}
-								className='flex-1'
+								className="flex-1"
 							/>
 						</div>
-						<div className='flex gap-2'>
+						<div className="flex gap-2">
 							<Button
-								variant='secondary'
-								size='sm'
+								variant="secondary"
+								size="sm"
 								onClick={handleCancel}
 								disabled={updateLink.isPending}
 							>
-								<X className='w-4 h-4 mr-1' />
+								<X className="w-4 h-4 mr-1" />
 								Cancel
 							</Button>
-							<Button
-								size='sm'
-								onClick={handleSave}
-								disabled={updateLink.isPending}
-							>
+							<Button size="sm" onClick={handleSave} disabled={updateLink.isPending}>
 								{updateLink.isPending ? (
-									<Spinner className='w-4 h-4 mr-1' />
+									<Spinner className="w-4 h-4 mr-1" />
 								) : (
-									<Save className='w-4 h-4 mr-1' />
+									<Save className="w-4 h-4 mr-1" />
 								)}
 								{updateLink.isPending ? "Saving" : "Save"}
 							</Button>
 						</div>
 					</div>
 				) : (
-					<div className='flex items-center justify-between'>
-						<div className='flex items-center gap-2'>
-							<span className='text-sm text-muted-foreground'>
-								{SHORT_DOMAIN}/
-							</span>
-							<span className='font-medium'>{url.shortCode}</span>
+					<div className="flex items-center justify-between">
+						<div className="flex items-center gap-2">
+							<span className="text-sm text-muted-foreground">{SHORT_DOMAIN}/</span>
+							<span className="font-medium">{url.shortCode}</span>
 						</div>
-						<Button
-							variant='ghost'
-							size='sm'
-							onClick={() => setIsEditing(true)}
-						>
-							<Edit2 className='w-4 h-4 mr-1' />
+						<Button variant="ghost" size="sm" onClick={() => setIsEditing(true)}>
+							<Edit2 className="w-4 h-4 mr-1" />
 							Edit
 						</Button>
 					</div>

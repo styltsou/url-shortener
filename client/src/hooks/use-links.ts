@@ -123,19 +123,9 @@ export function useUpdateLink() {
 	const queryClient = useQueryClient();
 
 	return useMutation({
-		mutationFn: async ({
-			id,
-			data,
-		}: {
-			id: string;
-			data: UpdateLinkRequest;
-		}) => {
+		mutationFn: async ({ id, data }: { id: string; data: UpdateLinkRequest }) => {
 			const token = await getToken();
-			const response = await apiClient.patch<{ data: Link }>(
-				`/api/v1/links/${id}`,
-				data,
-				token
-			);
+			const response = await apiClient.patch<{ data: Link }>(`/api/v1/links/${id}`, data, token);
 			return linkToUrl(response.data);
 		},
 		onSuccess: (_, variables) => {

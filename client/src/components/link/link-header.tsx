@@ -1,17 +1,8 @@
 import { useState } from "react";
-import {
-	Copy,
-	CopyCheck,
-	Calendar as CalendarIcon,
-	PowerOff,
-} from "lucide-react";
+import { Copy, CopyCheck, Calendar as CalendarIcon, PowerOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import {
-	Tooltip,
-	TooltipContent,
-	TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { formatDate, getTimePeriod } from "@/lib/date-utils";
 import type { Url } from "@/types/url";
 import { SHORT_DOMAIN } from "@/lib/env";
@@ -22,9 +13,7 @@ interface LinkHeaderProps {
 
 export function LinkHeader({ url }: LinkHeaderProps) {
 	const [copied, setCopied] = useState(false);
-	const [tooltipOpen, setTooltipOpen] = useState<boolean | undefined>(
-		undefined
-	);
+	const [tooltipOpen, setTooltipOpen] = useState<boolean | undefined>(undefined);
 	const isExpired = url.expiresAt && new Date(url.expiresAt) < new Date();
 	const isManuallyInactive = url.isActive === false;
 	// A link is effectively inactive if it's manually deactivated OR expired
@@ -49,24 +38,24 @@ export function LinkHeader({ url }: LinkHeaderProps) {
 	};
 
 	return (
-		<div className='flex flex-col gap-6'>
+		<div className="flex flex-col gap-6">
 			<div>
-				<div className='flex items-center gap-3'>
-					<h1 className='text-3xl font-bold text-foreground tracking-tight'>
+				<div className="flex items-center gap-3">
+					<h1 className="text-3xl font-bold text-foreground tracking-tight">
 						{SHORT_DOMAIN}/{url.shortCode}
 					</h1>
 					<Tooltip open={tooltipOpen} onOpenChange={handleTooltipOpenChange}>
 						<TooltipTrigger asChild>
 							<Button
-								variant='ghost'
-								size='icon'
+								variant="ghost"
+								size="icon"
 								onClick={handleCopy}
-								className='text-muted-foreground hover:text-foreground'
+								className="text-muted-foreground hover:text-foreground"
 							>
 								{copied ? (
-									<CopyCheck className='w-6 h-6 text-primary' />
+									<CopyCheck className="w-6 h-6 text-primary" />
 								) : (
-									<Copy className='w-6 h-6' />
+									<Copy className="w-6 h-6" />
 								)}
 							</Button>
 						</TooltipTrigger>
@@ -76,16 +65,16 @@ export function LinkHeader({ url }: LinkHeaderProps) {
 					</Tooltip>
 					{isEffectivelyInactive && (
 						<Badge
-							variant='outline'
-							className='text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 border-primary text-primary'
+							variant="outline"
+							className="text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 border-primary text-primary"
 						>
-							<PowerOff className='w-3 h-3' />
+							<PowerOff className="w-3 h-3" />
 							{isExpired ? "Expired" : "Inactive"}
 						</Badge>
 					)}
 				</div>
-				<div className='flex items-center gap-2 mt-2 text-muted-foreground text-sm'>
-					<CalendarIcon className='w-4 h-4' />
+				<div className="flex items-center gap-2 mt-2 text-muted-foreground text-sm">
+					<CalendarIcon className="w-4 h-4" />
 					<Tooltip>
 						<TooltipTrigger asChild>
 							<span>Created {getTimePeriod(url.createdAt)}</span>

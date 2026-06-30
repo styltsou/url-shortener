@@ -1,23 +1,22 @@
-import { useAuth } from '@clerk/clerk-react'
-import { Navigate } from '@tanstack/react-router'
-import { ReactNode } from 'react'
-import { LoadingState } from './shared/loading-state'
+import { useAuth } from "@clerk/clerk-react";
+import { Navigate } from "@tanstack/react-router";
+import { ReactNode } from "react";
+import { LoadingState } from "./shared/loading-state";
 
 interface ProtectedRouteProps {
-  children: ReactNode
+	children: ReactNode;
 }
 
 export function ProtectedRoute({ children }: ProtectedRouteProps) {
-  const { isSignedIn, isLoaded } = useAuth()
+	const { isSignedIn, isLoaded } = useAuth();
 
-  if (!isLoaded) {
-    return <LoadingState />
-  }
+	if (!isLoaded) {
+		return <LoadingState />;
+	}
 
-  if (!isSignedIn) {
-    return <Navigate to="/login" />
-  }
+	if (!isSignedIn) {
+		return <Navigate to="/login" />;
+	}
 
-  return <>{children}</>
+	return <>{children}</>;
 }
-

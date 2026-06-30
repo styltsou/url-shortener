@@ -48,7 +48,7 @@ export function getReferrerLabel(referrer: string): string {
 
 // Process referrers data: merge unknown sources into "Other"
 export function processReferrersData(
-	referrersData: Array<{ referrer: string; clicks: number }>
+	referrersData: Array<{ referrer: string; clicks: number }>,
 ): Array<{ referrer: string; clicks: number }> {
 	const known: Array<{ referrer: string; clicks: number }> = [];
 	let otherClicks = 0;
@@ -80,4 +80,3 @@ export function processReferrersData(
 
 	return known;
 }
-

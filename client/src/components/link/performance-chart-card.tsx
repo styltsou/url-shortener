@@ -12,7 +12,7 @@ export function PerformanceChartCard({ clicksData, isLoading }: PerformanceChart
 		return (
 			<Card>
 				<CardHeader>
-					<CardTitle className='text-sm font-semibold uppercase tracking-wider text-muted-foreground'>
+					<CardTitle className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
 						Performance
 					</CardTitle>
 				</CardHeader>
@@ -26,7 +26,7 @@ export function PerformanceChartCard({ clicksData, isLoading }: PerformanceChart
 	return (
 		<Card>
 			<CardHeader>
-				<CardTitle className='text-sm font-semibold uppercase tracking-wider text-muted-foreground'>
+				<CardTitle className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
 					Performance
 				</CardTitle>
 			</CardHeader>
@@ -36,4 +36,3 @@ export function PerformanceChartCard({ clicksData, isLoading }: PerformanceChart
 		</Card>
 	);
 }
-

@@ -15,23 +15,21 @@ function BillingPage() {
 	}
 
 	if (!isSignedIn) {
-		return <Navigate to='/login' />;
+		return <Navigate to="/login" />;
 	}
 
 	return (
-		<main className='py-12 px-4 sm:px-6'>
-			<div className='max-w-6xl mx-auto'>
-				<div className='mb-8'>
-					<h1 className='text-3xl font-bold text-foreground'>Billing</h1>
-					<p className='text-muted-foreground mt-2'>
+		<main className="py-12 px-4 sm:px-6">
+			<div className="max-w-6xl mx-auto">
+				<div className="mb-8">
+					<h1 className="text-3xl font-bold text-foreground">Billing</h1>
+					<p className="text-muted-foreground mt-2">
 						Manage your billing information and subscription.
 					</p>
 				</div>
-				<div className='grid gap-6'>
-					<div className='border border-border rounded-lg p-8 text-center'>
-						<p className='text-muted-foreground'>
-							Billing content coming soon...
-						</p>
+				<div className="grid gap-6">
+					<div className="border border-border rounded-lg p-8 text-center">
+						<p className="text-muted-foreground">Billing content coming soon...</p>
 					</div>
 				</div>
 			</div>

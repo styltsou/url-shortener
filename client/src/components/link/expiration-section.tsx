@@ -1,19 +1,9 @@
 import { useState, useEffect } from "react";
-import {
-	Clock,
-	Calendar as CalendarIcon,
-	Save,
-	X,
-	ChevronDownIcon,
-} from "lucide-react";
+import { Clock, Calendar as CalendarIcon, Save, X, ChevronDownIcon } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
-import {
-	Popover,
-	PopoverContent,
-	PopoverTrigger,
-} from "@/components/ui/popover";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import { Input } from "@/components/ui/input";
 import { formatDate, formatDateTime } from "@/lib/date-utils";
@@ -28,7 +18,7 @@ interface ExpirationSectionProps {
 export function ExpirationSection({ url }: ExpirationSectionProps) {
 	const [isEditing, setIsEditing] = useState(false);
 	const [expirationDate, setExpirationDate] = useState<Date | undefined>(
-		url.expiresAt ? new Date(url.expiresAt) : undefined
+		url.expiresAt ? new Date(url.expiresAt) : undefined,
 	);
 	const [expirationTime, setExpirationTime] = useState<string>(() => {
 		if (url.expiresAt) {
@@ -97,7 +87,7 @@ export function ExpirationSection({ url }: ExpirationSectionProps) {
 				},
 			});
 			setIsEditing(false);
-		} catch (error) {
+		} catch {
 			// Error is handled by the hook
 		}
 	};
@@ -119,37 +109,33 @@ export function ExpirationSection({ url }: ExpirationSectionProps) {
 	return (
 		<Card>
 			<CardHeader>
-				<CardTitle className='text-sm font-semibold uppercase tracking-wider flex items-center gap-2 text-muted-foreground'>
-					<Clock className='w-4 h-4' /> Expiration
+				<CardTitle className="text-sm font-semibold uppercase tracking-wider flex items-center gap-2 text-muted-foreground">
+					<Clock className="w-4 h-4" /> Expiration
 				</CardTitle>
 			</CardHeader>
 			<CardContent>
 				{isEditing ? (
-					<div className='space-y-3'>
-						<div className='flex gap-2'>
-							<div className='flex-1'>
+					<div className="space-y-3">
+						<div className="flex gap-2">
+							<div className="flex-1">
 								<Popover>
 									<PopoverTrigger asChild>
 										<Button
-											variant='outline'
+											variant="outline"
 											className={`w-full justify-between font-normal bg-input ${
 												!expirationDate ? "text-muted-foreground" : ""
 											}`}
 										>
-											<div className='flex items-center'>
-												<CalendarIcon className='mr-2 h-4 w-4' />
-												{expirationDate ? (
-													formatDate(expirationDate)
-												) : (
-													<span>Pick a date</span>
-												)}
+											<div className="flex items-center">
+												<CalendarIcon className="mr-2 h-4 w-4" />
+												{expirationDate ? formatDate(expirationDate) : <span>Pick a date</span>}
 											</div>
-											<ChevronDownIcon className='h-4 w-4 opacity-50' />
+											<ChevronDownIcon className="h-4 w-4 opacity-50" />
 										</Button>
 									</PopoverTrigger>
-									<PopoverContent className='w-auto p-0' align='start'>
+									<PopoverContent className="w-auto p-0" align="start">
 										<Calendar
-											mode='single'
+											mode="single"
 											selected={expirationDate}
 											onSelect={(date) => {
 												setExpirationDate(date);
@@ -165,42 +151,42 @@ export function ExpirationSection({ url }: ExpirationSectionProps) {
 									</PopoverContent>
 								</Popover>
 							</div>
-							<div className='w-32'>
+							<div className="w-32">
 								<Input
-									type='time'
+									type="time"
 									value={expirationTime}
 									onChange={(e) => setExpirationTime(e.target.value)}
-									step='60'
-									className='cursor-text appearance-none [&::-webkit-calendar-picker-indicator]:hidden [&::-webkit-calendar-picker-indicator]:appearance-none'
+									step="60"
+									className="cursor-text appearance-none [&::-webkit-calendar-picker-indicator]:hidden [&::-webkit-calendar-picker-indicator]:appearance-none"
 								/>
 							</div>
 						</div>
-						<div className='flex gap-2'>
+						<div className="flex gap-2">
 							<Button
-								variant='secondary'
-								size='sm'
+								variant="secondary"
+								size="sm"
 								onClick={handleCancel}
 								disabled={updateLink.isPending}
 							>
-								<X className='w-4 h-4 mr-1' />
+								<X className="w-4 h-4 mr-1" />
 								Cancel
 							</Button>
 							<Button
-								size='sm'
+								size="sm"
 								onClick={handleSave}
 								disabled={updateLink.isPending || !expirationDate}
 							>
 								{updateLink.isPending ? (
-									<Spinner className='w-4 h-4 mr-1' />
+									<Spinner className="w-4 h-4 mr-1" />
 								) : (
-									<Save className='w-4 h-4 mr-1' />
+									<Save className="w-4 h-4 mr-1" />
 								)}
 								{updateLink.isPending ? "Saving" : "Save"}
 							</Button>
 						</div>
 					</div>
 				) : (
-					<div className='flex items-center justify-between'>
+					<div className="flex items-center justify-between">
 						<p
 							className={`font-medium ${
 								url.expiresAt && new Date(url.expiresAt) < new Date()
@@ -208,16 +194,10 @@ export function ExpirationSection({ url }: ExpirationSectionProps) {
 									: "text-muted-foreground"
 							}`}
 						>
-							{url.expiresAt
-								? formatDateTime(url.expiresAt)
-								: "No expiration date set"}
+							{url.expiresAt ? formatDateTime(url.expiresAt) : "No expiration date set"}
 						</p>
-						<Button
-							variant='ghost'
-							size='sm'
-							onClick={() => setIsEditing(true)}
-						>
-							<CalendarIcon className='w-4 h-4 mr-1' />
+						<Button variant="ghost" size="sm" onClick={() => setIsEditing(true)}>
+							<CalendarIcon className="w-4 h-4 mr-1" />
 							Edit
 						</Button>
 					</div>

@@ -23,13 +23,13 @@ function DashboardPage() {
 	}
 
 	if (!isSignedIn) {
-		return <Navigate to='/login' />;
+		return <Navigate to="/login" />;
 	}
 
 	if (isLoading) {
 		return (
-			<main className='py-12 px-4 sm:px-6'>
-				<div className='max-w-6xl mx-auto'>
+			<main className="py-12 px-4 sm:px-6">
+				<div className="max-w-6xl mx-auto">
 					<DashboardSkeleton />
 				</div>
 			</main>
@@ -38,15 +38,15 @@ function DashboardPage() {
 
 	if (error) {
 		return (
-			<main className='py-12 px-4 sm:px-6'>
-				<div className='max-w-6xl mx-auto'>
+			<main className="py-12 px-4 sm:px-6">
+				<div className="max-w-6xl mx-auto">
 					<Card>
-						<CardContent className='flex flex-col items-center justify-center py-12'>
-							<AlertCircle className='h-8 w-8 text-destructive mb-4' />
-							<p className='text-sm text-muted-foreground mb-4'>
+						<CardContent className="flex flex-col items-center justify-center py-12">
+							<AlertCircle className="h-8 w-8 text-destructive mb-4" />
+							<p className="text-sm text-muted-foreground mb-4">
 								Failed to load dashboard data. Please try again.
 							</p>
-							<Button variant='outline' onClick={() => window.location.reload()}>
+							<Button variant="outline" onClick={() => window.location.reload()}>
 								Retry
 							</Button>
 						</CardContent>
@@ -66,34 +66,31 @@ function DashboardPage() {
 		})) ?? [];
 
 	return (
-		<main className='py-12 px-4 sm:px-6'>
-			<div className='max-w-6xl mx-auto'>
-				<div className='mb-8'>
-					<h1 className='text-3xl font-bold text-foreground'>Dashboard</h1>
-					<p className='text-muted-foreground mt-2'>
+		<main className="py-12 px-4 sm:px-6">
+			<div className="max-w-6xl mx-auto">
+				<div className="mb-8">
+					<h1 className="text-3xl font-bold text-foreground">Dashboard</h1>
+					<p className="text-muted-foreground mt-2">
 						Overview of your shortened links and their performance.
 					</p>
 				</div>
 
 				{data && data.total_links === 0 ? (
 					<Card>
-						<CardContent className='flex flex-col items-center justify-center py-16'>
-							<Link2 className='h-12 w-12 text-muted-foreground mb-4' />
-							<h2 className='text-xl font-semibold text-foreground mb-2'>
-								No links yet
-							</h2>
-							<p className='text-sm text-muted-foreground mb-6 max-w-sm text-center'>
-								Create your first shortened link to start tracking clicks and
-								analytics.
+						<CardContent className="flex flex-col items-center justify-center py-16">
+							<Link2 className="h-12 w-12 text-muted-foreground mb-4" />
+							<h2 className="text-xl font-semibold text-foreground mb-2">No links yet</h2>
+							<p className="text-sm text-muted-foreground mb-6 max-w-sm text-center">
+								Create your first shortened link to start tracking clicks and analytics.
 							</p>
 							<Button asChild>
-								<a href='/links'>Create your first link</a>
+								<a href="/links">Create your first link</a>
 							</Button>
 						</CardContent>
 					</Card>
 				) : (
 					<>
-						<div className='mb-6'>
+						<div className="mb-6">
 							<DashboardStats
 								totalLinks={data?.total_links ?? 0}
 								activeLinks={data?.active_links ?? 0}
@@ -101,7 +98,7 @@ function DashboardPage() {
 							/>
 						</div>
 
-						<div className='mb-6'>
+						<div className="mb-6">
 							<DashboardChart data={clicksOverTime} />
 						</div>
 

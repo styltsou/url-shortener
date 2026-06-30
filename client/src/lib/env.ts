@@ -10,9 +10,7 @@ export function validateEnv(): void {
 	const clerkPubKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
 
 	if (!clerkPubKey) {
-		throw new Error(
-			"Missing required environment variable: VITE_CLERK_PUBLISHABLE_KEY"
-		);
+		throw new Error("Missing required environment variable: VITE_CLERK_PUBLISHABLE_KEY");
 	}
 }
 
@@ -23,9 +21,7 @@ export function validateEnv(): void {
 export function getClerkPublishableKey(): string {
 	const key = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
 	if (!key) {
-		throw new Error(
-			"Missing required environment variable: VITE_CLERK_PUBLISHABLE_KEY"
-		);
+		throw new Error("Missing required environment variable: VITE_CLERK_PUBLISHABLE_KEY");
 	}
 	return key;
 }
