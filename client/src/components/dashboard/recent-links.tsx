@@ -1,7 +1,8 @@
 import { Link, ExternalLink } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { SHORT_DOMAIN, DATETIME_FORMAT_OPTIONS } from "@/lib/constants";
+import { DATETIME_FORMAT_OPTIONS } from "@/lib/constants";
+import { SHORT_DOMAIN } from "@/lib/env";
 import type { RecentLink } from "@/hooks/use-dashboard";
 
 interface RecentLinksProps {

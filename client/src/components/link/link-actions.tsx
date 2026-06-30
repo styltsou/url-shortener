@@ -48,7 +48,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { useBlockNavigation } from "@/hooks/use-block-navigation";
 import type { Url } from "@/types/url";
-import { SHORT_DOMAIN } from "@/lib/constants";
+import { SHORT_DOMAIN } from "@/lib/env";
 
 interface LinkActionsProps {
 	url: Url;

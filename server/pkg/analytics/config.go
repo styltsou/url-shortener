@@ -10,4 +10,5 @@ type Config struct {
 	MaxOpenConns    int
 	MaxIdleConns    int
 	ConnMaxLifetime time.Duration
+	TableName       string
 }

@@ -8,7 +8,7 @@ import { useUpdateLink } from "@/hooks/use-links";
 import { useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
 import type { Url } from "@/types/url";
-import { SHORT_DOMAIN } from "@/lib/constants";
+import { SHORT_DOMAIN } from "@/lib/env";
 
 interface ShortcodeSectionProps {
 	url: Url;

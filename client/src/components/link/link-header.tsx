@@ -12,9 +12,9 @@ import {
 	TooltipContent,
 	TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { formatDate, getTimePeriod } from "@/lib/mock-data";
+import { formatDate, getTimePeriod } from "@/lib/date-utils";
 import type { Url } from "@/types/url";
-import { SHORT_DOMAIN } from "@/lib/constants";
+import { SHORT_DOMAIN } from "@/lib/env";
 
 interface LinkHeaderProps {
 	url: Url;

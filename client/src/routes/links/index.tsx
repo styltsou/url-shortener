@@ -9,7 +9,7 @@ import {
 	StatusFilter,
 	type StatusFilter as StatusFilterType,
 } from "@/components/links/status-filter";
-import { useLinks, useCreateLink } from "@/hooks/use-links";
+import { useLinks, useCreateLink, useDeleteLink } from "@/hooks/use-links";
 import { useTags, useAddTagsToLink } from "@/hooks/use-tags";
 import { LinksPageSkeleton } from "@/components/links/links-page-skeleton";
 import { LinksHeader } from "@/components/links/links-header";
@@ -43,6 +43,7 @@ function LinksPage() {
 	const { data: availableTags = [], isLoading: isLoadingTags } = useTags();
 	const createLink = useCreateLink();
 	const addTagsToLink = useAddTagsToLink();
+	const deleteLink = useDeleteLink();
 
 	// Reset to page 1 when filters or limit change
 	const handleTagFilterChange = (tagIds: string[]) => {
@@ -74,19 +75,22 @@ function LinksPage() {
 		expirationDate?: string,
 		tagIds?: string[]
 	) => {
-		// Create the link first
 		const createdLink = await createLink.mutateAsync({
 			url: originalUrl,
 			...(customCode && { shortcode: customCode }),
 			...(expirationDate && { expires_at: expirationDate }),
 		});
 
-		// Then add tags if any were selected
 		if (tagIds && tagIds.length > 0) {
-			await addTagsToLink.mutateAsync({
-				linkId: createdLink.id,
-				tagIds: tagIds,
-			});
+			try {
+				await addTagsToLink.mutateAsync({
+					linkId: createdLink.id,
+					tagIds: tagIds,
+				});
+			} catch {
+				deleteLink.mutate(createdLink.id);
+				throw new Error("Failed to add tags. Link has been removed.");
+			}
 		}
 	};
 

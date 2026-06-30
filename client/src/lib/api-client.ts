@@ -1,9 +1,5 @@
 import { getApiBaseUrl } from "./env";
 
-export interface ApiSuccessResponse<T> {
-	data: T;
-}
-
 export interface ApiErrorResponse {
 	error: {
 		code?: string;
@@ -11,8 +7,6 @@ export interface ApiErrorResponse {
 		detail?: string;
 	};
 }
-
-export type ApiResponse<T> = ApiSuccessResponse<T> | ApiErrorResponse;
 
 /**
  * Custom error class for API errors
@@ -31,7 +25,7 @@ async function apiFetch<T>(
 	endpoint: string,
 	options: RequestInit = {},
 	token: string | null
-): Promise<ApiSuccessResponse<T>> {
+): Promise<T> {
 	const baseUrl = getApiBaseUrl();
 	const url = `${baseUrl}${endpoint}`;
 
@@ -67,21 +61,23 @@ async function apiFetch<T>(
 
 	// Handle 204 No Content responses
 	if (response.status === 204) {
-		return {} as ApiSuccessResponse<T>;
+		return {} as T;
 	}
 
 	return response.json();
 }
 
 /**
- * API client for making authenticated requests
- * All methods require a token to be passed
+ * API client for making authenticated requests.
+ * All methods return the raw JSON body from the server (typed as T).
+ * The server wraps all responses in { data: T, ... }, so callers
+ * should type T as the full server response shape (e.g. { data: Link }).
  */
 export const apiClient = {
 	async get<T>(
 		endpoint: string,
 		token: string | null
-	): Promise<ApiSuccessResponse<T>> {
+	): Promise<T> {
 		return apiFetch<T>(endpoint, { method: "GET" }, token);
 	},
 
@@ -89,7 +85,7 @@ export const apiClient = {
 		endpoint: string,
 		body: unknown,
 		token: string | null
-	): Promise<ApiSuccessResponse<T>> {
+	): Promise<T> {
 		return apiFetch<T>(
 			endpoint,
 			{
@@ -104,7 +100,7 @@ export const apiClient = {
 		endpoint: string,
 		body: unknown,
 		token: string | null
-	): Promise<ApiSuccessResponse<T>> {
+	): Promise<T> {
 		return apiFetch<T>(
 			endpoint,
 			{

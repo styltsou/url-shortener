@@ -45,3 +45,7 @@ export function getApiBaseUrl(): string {
 export function getShortDomain(): string {
 	return import.meta.env.VITE_SHORT_DOMAIN || "link4.it";
 }
+
+// Convenience constants evaluated at module load time
+export const API_BASE_URL = getApiBaseUrl();
+export const SHORT_DOMAIN = getShortDomain();

@@ -24,7 +24,7 @@ This file documents known gaps and deferred work discovered during codebase expl
 ## Infrastructure & Quality
 
 - **No integration/E2E tests** — all tests are unit tests with mocks; no real DB/Redis/ClickHouse tests
-- **No ClickHouse mock in unit tests** — analytics methods are skipped when `analyticsClient == nil`
+- **No ClickHouse mock in unit tests** — analytics methods use a `nopClient` when ClickHouse is unavailable
 - **No proper DB migration tool** — migrations run via handwritten shell scripts instead of a framework (golang-migrate, goose, etc.)
 - **`server/main` binary** — was committed, now removed from git tracking
 - **No CI/CD** — no deployment scripts or pipeline configuration
@@ -32,7 +32,7 @@ This file documents known gaps and deferred work discovered during codebase expl
 
 ## Code Quality / Technical Debt
 
-- **Mock data still used** — `mock-data.ts` is imported by some frontend components, suggesting some areas may still use mock data in edge cases
+- **Mock data still used** — `mock-data.ts` is imported by some frontend components (no production imports remain)
 - **QR code endpoint behind auth** — the QR code endpoint (`{shortcode}/qrcode`) is mounted inside the auth-required `/api/v1` group, while the redirect endpoint is public. QR codes for public sharing require auth.
 - **TODOs in production code** — `cmd/main.go:58` and `pkg/server.go:70` have developer learning notes
-- **ClickHouse database hardcoded** — `CREATE TABLE IF NOT EXISTS link4it.click_events` in `clickhouse.go:79` hardcodes the database name
+

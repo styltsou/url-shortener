@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import { Input } from "@/components/ui/input";
-import { formatDate, formatDateTime } from "@/lib/mock-data";
+import { formatDate, formatDateTime } from "@/lib/date-utils";
 import { useUpdateLink } from "@/hooks/use-links";
 import { toast } from "sonner";
 import type { Url } from "@/types/url";

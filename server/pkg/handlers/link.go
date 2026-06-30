@@ -86,7 +86,7 @@ func (h *LinkHandler) Redirect(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ip, _, _ := net.SplitHostPort(r.RemoteAddr)
-	go h.LinkService.RecordClick(context.WithoutCancel(r.Context()), link.ID, ip, r.UserAgent(), r.Referer())
+	h.LinkService.RecordClick(r.Context(), link.ID, ip, r.UserAgent(), r.Referer())
 
 	http.Redirect(w, r, link.OriginalUrl, http.StatusFound)
 }

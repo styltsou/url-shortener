@@ -36,7 +36,7 @@ export function useDashboard() {
 		queryKey: dashboardKeys.all,
 		queryFn: async () => {
 			const token = await getToken();
-			const response = await apiClient.get<DashboardData>(
+			const response = await apiClient.get<{ data: DashboardData }>(
 				"/api/v1/dashboard",
 				token
 			);

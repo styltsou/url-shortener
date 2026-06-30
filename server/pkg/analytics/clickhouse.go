@@ -42,15 +42,56 @@ type LinkAnalytics struct {
 	TopUserAgents  []UserAgentStat  `json:"top_user_agents"`
 }
 
-type Client struct {
-	conn   driver.Conn
+const (
+	clickChanBuffer = 1000
+	numClickWorkers = 2
+)
+
+type clickRequest struct {
+	event ClickEvent
+	ctx   context.Context
+}
+
+type ClientInterface interface {
+	RecordClick(ctx context.Context, event ClickEvent)
+	GetLinkAnalytics(ctx context.Context, linkID uuid.UUID, since, until time.Time) (*LinkAnalytics, error)
+	GetUserAnalytics(ctx context.Context, linkIDs []uuid.UUID, since, until time.Time) (*UserAnalytics, error)
+	Close() error
+}
+
+type nopClient struct {
 	logger logger.Logger
 }
 
-func New(ctx context.Context, cfg Config, log logger.Logger) (*Client, error) {
+func (c *nopClient) RecordClick(_ context.Context, event ClickEvent) {
+	// no-op
+}
+
+func (c *nopClient) GetLinkAnalytics(_ context.Context, _ uuid.UUID, _, _ time.Time) (*LinkAnalytics, error) {
+	return &LinkAnalytics{}, nil
+}
+
+func (c *nopClient) GetUserAnalytics(_ context.Context, _ []uuid.UUID, _, _ time.Time) (*UserAnalytics, error) {
+	return &UserAnalytics{}, nil
+}
+
+func (c *nopClient) Close() error {
+	return nil
+}
+
+type Client struct {
+	conn          driver.Conn
+	logger        logger.Logger
+	clickChan     chan clickRequest
+	workersCtx    context.Context
+	workersCancel context.CancelFunc
+	tableName     string
+}
+
+func New(ctx context.Context, cfg Config, log logger.Logger) (ClientInterface, error) {
 	if cfg.URL == "" {
 		log.Info("ClickHouse URL not configured, analytics disabled")
-		return &Client{conn: nil, logger: log}, nil
+		return &nopClient{logger: log}, nil
 	}
 
 	dialTimeout := cfg.DialTimeout
@@ -68,6 +109,11 @@ func New(ctx context.Context, cfg Config, log logger.Logger) (*Client, error) {
 	connMaxLifetime := cfg.ConnMaxLifetime
 	if connMaxLifetime == 0 {
 		connMaxLifetime = 5 * time.Minute
+	}
+
+	tableName := cfg.TableName
+	if tableName == "" {
+		tableName = "link4it.click_events"
 	}
 
 	conn, err := clickhouse.Open(&clickhouse.Options{
@@ -92,8 +138,8 @@ func New(ctx context.Context, cfg Config, log logger.Logger) (*Client, error) {
 			fmt.Errorf("failed to ping ClickHouse: %w", err)
 	}
 
-	if err := conn.Exec(ctx, `
-		CREATE TABLE IF NOT EXISTS link4it.click_events (
+	if err := conn.Exec(ctx, fmt.Sprintf(`
+		CREATE TABLE IF NOT EXISTS %s (
 			link_id    UUID,
 			timestamp  DateTime DEFAULT now(),
 			ip         String,
@@ -101,7 +147,7 @@ func New(ctx context.Context, cfg Config, log logger.Logger) (*Client, error) {
 			referrer   String
 		) ENGINE = MergeTree()
 		ORDER BY (link_id, timestamp)
-	`); err != nil {
+	`, tableName)); err != nil {
 		conn.Close()
 		return &Client{conn: nil, logger: log},
 			fmt.Errorf("failed to create click_events table: %w", err)
@@ -111,21 +157,44 @@ func New(ctx context.Context, cfg Config, log logger.Logger) (*Client, error) {
 		zap.String("url", cfg.URL),
 	)
 
-	return &Client{conn: conn, logger: log}, nil
+	workersCtx, workersCancel := context.WithCancel(context.Background())
+	c := &Client{
+		conn:          conn,
+		logger:        log,
+		clickChan:     make(chan clickRequest, clickChanBuffer),
+		workersCtx:    workersCtx,
+		workersCancel: workersCancel,
+		tableName:     tableName,
+	}
+	c.startWorkers()
+	return c, nil
 }
 
-func (c *Client) RecordClick(ctx context.Context, event ClickEvent) {
-	if c.conn == nil {
-		return
+func (c *Client) startWorkers() {
+	for i := range numClickWorkers {
+		go c.worker(i)
 	}
+}
 
+func (c *Client) worker(id int) {
+	for {
+		select {
+		case <-c.workersCtx.Done():
+			return
+		case req := <-c.clickChan:
+			c.insertClick(req.ctx, req.event)
+		}
+	}
+}
+
+func (c *Client) insertClick(ctx context.Context, event ClickEvent) {
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 
-	if err := c.conn.Exec(ctx, `
-		INSERT INTO link4it.click_events (link_id, timestamp, ip, user_agent, referrer)
+	if err := c.conn.Exec(ctx, fmt.Sprintf(`
+		INSERT INTO %s (link_id, timestamp, ip, user_agent, referrer)
 		VALUES (?, ?, ?, ?, ?)
-	`, event.LinkID, event.Timestamp, event.IP, event.UserAgent, event.Referrer); err != nil {
+	`, c.tableName), event.LinkID, event.Timestamp, event.IP, event.UserAgent, event.Referrer); err != nil {
 		c.logger.Warn("Failed to record click event",
 			zap.String("link_id", event.LinkID.String()),
 			zap.Error(err),
@@ -133,11 +202,17 @@ func (c *Client) RecordClick(ctx context.Context, event ClickEvent) {
 	}
 }
 
-func (c *Client) GetLinkAnalytics(ctx context.Context, linkID uuid.UUID, since, until time.Time) (*LinkAnalytics, error) {
-	if c.conn == nil {
-		return &LinkAnalytics{}, nil
+func (c *Client) RecordClick(ctx context.Context, event ClickEvent) {
+	select {
+	case c.clickChan <- clickRequest{event: event, ctx: ctx}:
+	default:
+		c.logger.Warn("Click event dropped — worker queue full",
+			zap.String("link_id", event.LinkID.String()),
+		)
 	}
+}
 
+func (c *Client) GetLinkAnalytics(ctx context.Context, linkID uuid.UUID, since, until time.Time) (*LinkAnalytics, error) {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
@@ -170,10 +245,10 @@ func (c *Client) GetLinkAnalytics(ctx context.Context, linkID uuid.UUID, since, 
 }
 
 func (c *Client) getTotalClicks(ctx context.Context, linkID uuid.UUID, since, until time.Time) (int, error) {
-	rows, err := c.conn.Query(ctx, `
-		SELECT count() FROM link4it.click_events
+	rows, err := c.conn.Query(ctx, fmt.Sprintf(`
+		SELECT count() FROM %s
 		WHERE link_id = ? AND timestamp >= ? AND timestamp <= ?
-	`, linkID, since, until)
+	`, c.tableName), linkID, since, until)
 	if err != nil {
 		return 0, fmt.Errorf("failed to query total clicks: %w", err)
 	}
@@ -189,13 +264,13 @@ func (c *Client) getTotalClicks(ctx context.Context, linkID uuid.UUID, since, un
 }
 
 func (c *Client) getClicksOverTime(ctx context.Context, linkID uuid.UUID, since, until time.Time) ([]ClicksOverTime, error) {
-	rows, err := c.conn.Query(ctx, `
+	rows, err := c.conn.Query(ctx, fmt.Sprintf(`
 		SELECT toDate(timestamp) AS date, count() AS clicks
-		FROM link4it.click_events
+		FROM %s
 		WHERE link_id = ? AND timestamp >= ? AND timestamp <= ?
 		GROUP BY date
 		ORDER BY date
-	`, linkID, since, until)
+	`, c.tableName), linkID, since, until)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query clicks over time: %w", err)
 	}
@@ -213,14 +288,14 @@ func (c *Client) getClicksOverTime(ctx context.Context, linkID uuid.UUID, since,
 }
 
 func (c *Client) getTopReferrers(ctx context.Context, linkID uuid.UUID, since, until time.Time) ([]ReferrerStat, error) {
-	rows, err := c.conn.Query(ctx, `
+	rows, err := c.conn.Query(ctx, fmt.Sprintf(`
 		SELECT referrer, count() AS clicks
-		FROM link4it.click_events
+		FROM %s
 		WHERE link_id = ? AND timestamp >= ? AND timestamp <= ?
 		GROUP BY referrer
 		ORDER BY clicks DESC
 		LIMIT 10
-	`, linkID, since, until)
+	`, c.tableName), linkID, since, until)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query top referrers: %w", err)
 	}
@@ -238,14 +313,14 @@ func (c *Client) getTopReferrers(ctx context.Context, linkID uuid.UUID, since, u
 }
 
 func (c *Client) getTopUserAgents(ctx context.Context, linkID uuid.UUID, since, until time.Time) ([]UserAgentStat, error) {
-	rows, err := c.conn.Query(ctx, `
+	rows, err := c.conn.Query(ctx, fmt.Sprintf(`
 		SELECT user_agent, count() AS clicks
-		FROM link4it.click_events
+		FROM %s
 		WHERE link_id = ? AND timestamp >= ? AND timestamp <= ?
 		GROUP BY user_agent
 		ORDER BY clicks DESC
 		LIMIT 10
-	`, linkID, since, until)
+	`, c.tableName), linkID, since, until)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query top user agents: %w", err)
 	}
@@ -268,7 +343,7 @@ type UserAnalytics struct {
 }
 
 func (c *Client) GetUserAnalytics(ctx context.Context, linkIDs []uuid.UUID, since, until time.Time) (*UserAnalytics, error) {
-	if c.conn == nil || len(linkIDs) == 0 {
+	if len(linkIDs) == 0 {
 		return &UserAnalytics{}, nil
 	}
 
@@ -292,10 +367,10 @@ func (c *Client) GetUserAnalytics(ctx context.Context, linkIDs []uuid.UUID, sinc
 }
 
 func (c *Client) getUserTotalClicks(ctx context.Context, linkIDs []uuid.UUID, since, until time.Time) (int, error) {
-	rows, err := c.conn.Query(ctx, `
-		SELECT count() FROM link4it.click_events
+	rows, err := c.conn.Query(ctx, fmt.Sprintf(`
+		SELECT count() FROM %s
 		WHERE link_id = ANY(?) AND timestamp >= ? AND timestamp <= ?
-	`, linkIDs, since, until)
+	`, c.tableName), linkIDs, since, until)
 	if err != nil {
 		return 0, fmt.Errorf("failed to query user total clicks: %w", err)
 	}
@@ -311,13 +386,13 @@ func (c *Client) getUserTotalClicks(ctx context.Context, linkIDs []uuid.UUID, si
 }
 
 func (c *Client) getUserClicksOverTime(ctx context.Context, linkIDs []uuid.UUID, since, until time.Time) ([]ClicksOverTime, error) {
-	rows, err := c.conn.Query(ctx, `
+	rows, err := c.conn.Query(ctx, fmt.Sprintf(`
 		SELECT toDate(timestamp) AS date, count() AS clicks
-		FROM link4it.click_events
+		FROM %s
 		WHERE link_id = ANY(?) AND timestamp >= ? AND timestamp <= ?
 		GROUP BY date
 		ORDER BY date
-	`, linkIDs, since, until)
+	`, c.tableName), linkIDs, since, until)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query user clicks over time: %w", err)
 	}
@@ -335,8 +410,28 @@ func (c *Client) getUserClicksOverTime(ctx context.Context, linkIDs []uuid.UUID,
 }
 
 func (c *Client) Close() error {
-	if c == nil || c.conn == nil {
-		return nil
+	c.workersCancel()
+
+	drainCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	ticker := time.NewTicker(50 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			if len(c.clickChan) == 0 {
+				return c.conn.Close()
+			}
+		case <-drainCtx.Done():
+			remaining := len(c.clickChan)
+			if remaining > 0 {
+				c.logger.Warn("Click worker pool drained with remaining events",
+					zap.Int("dropped_events", remaining),
+				)
+			}
+			return c.conn.Close()
+		}
 	}
-	return c.conn.Close()
 }

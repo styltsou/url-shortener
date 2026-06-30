@@ -133,8 +133,11 @@ func (h *TagHandler) DeleteTags(w http.ResponseWriter, r *http.Request) {
 	}
 
 	render.Status(r, http.StatusOK)
+	if deletedTags == nil {
+		deletedTags = []db.DeleteTagsRow{}
+	}
 	render.JSON(w, r, &dto.SuccessResponse[[]db.DeleteTagsRow]{
-		Data: normalizeSlice(deletedTags),
+		Data: deletedTags,
 	})
 }
 

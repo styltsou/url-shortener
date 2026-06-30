@@ -22,6 +22,7 @@ type Config struct {
 	ClickhouseMaxOpenConns   int      `mapstructure:"CLICKHOUSE_MAX_OPEN_CONNS" validate:"omitempty,min=1"`
 	ClickhouseMaxIdleConns   int      `mapstructure:"CLICKHOUSE_MAX_IDLE_CONNS" validate:"omitempty,min=1"`
 	ClickhouseConnMaxLifeMin int      `mapstructure:"CLICKHOUSE_CONN_MAX_LIFE_MIN" validate:"omitempty,min=1"`
+	ClickhouseTableName      string   `mapstructure:"CLICKHOUSE_TABLE_NAME"`
 	RedisURL                 string   `mapstructure:"REDIS_URL" validate:"required"`
 	RedisUsername            string   `mapstructure:"REDIS_USERNAME" validate:"omitempty"`
 	RedisPassword            string   `mapstructure:"REDIS_PASSWORD" validate:"omitempty"`
@@ -132,6 +133,7 @@ func Load() (*Config, error) {
 	v.SetDefault("CLICKHOUSE_MAX_OPEN_CONNS", 5)
 	v.SetDefault("CLICKHOUSE_MAX_IDLE_CONNS", 2)
 	v.SetDefault("CLICKHOUSE_CONN_MAX_LIFE_MIN", 5)
+	v.SetDefault("CLICKHOUSE_TABLE_NAME", "link4it.click_events")
 
 	// Read .env file if it exists; fallback to environment variables in containers
 	v.SetConfigName(".env")

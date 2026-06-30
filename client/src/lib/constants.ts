@@ -2,14 +2,6 @@
  * Application-wide constants
  */
 
-import { getApiBaseUrl, getShortDomain } from "./env";
-
-// API Configuration
-export const API_BASE_URL = getApiBaseUrl();
-
-// Domain Configuration
-export const SHORT_DOMAIN = getShortDomain();
-
 // Pagination Defaults
 export const DEFAULT_PAGE_SIZE = 5;
 export const MIN_PAGE_SIZE = 5;

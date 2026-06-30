@@ -94,12 +94,12 @@ type LinkService struct {
 	txBeginner      TxBeginner
 	queries         LinkQueries
 	cache           *redis.Client
-	analyticsClient *analytics.Client
+	analyticsClient analytics.ClientInterface
 	logger          logger.Logger
 	runInTx         func(ctx context.Context, fn func(LinkQueries) error) error
 }
 
-func NewLinkService(txBeginner TxBeginner, queries LinkQueries, cache *redis.Client, analyticsClient *analytics.Client, logger logger.Logger) *LinkService {
+func NewLinkService(txBeginner TxBeginner, queries LinkQueries, cache *redis.Client, analyticsClient analytics.ClientInterface, logger logger.Logger) *LinkService {
 	s := &LinkService{
 		txBeginner:      txBeginner,
 		queries:         queries,
@@ -377,10 +377,6 @@ func (s *LinkService) GetOriginalURL(ctx context.Context, code string) (db.GetLi
 
 // RecordClick records a click event for analytics
 func (s *LinkService) RecordClick(ctx context.Context, linkID uuid.UUID, ip, userAgent, referrer string) {
-	if s.analyticsClient == nil {
-		return
-	}
-
 	s.analyticsClient.RecordClick(ctx, analytics.ClickEvent{
 		LinkID:    linkID,
 		Timestamp: time.Now(),
@@ -401,10 +397,6 @@ func (s *LinkService) GetLinkAnalytics(ctx context.Context, userID string, short
 			return nil, fmt.Errorf("%w: %v", apperrors.LinkNotFound, err)
 		}
 		return nil, fmt.Errorf("failed to get link: %w", err)
-	}
-
-	if s.analyticsClient == nil {
-		return &analytics.LinkAnalytics{}, nil
 	}
 
 	until := time.Now()

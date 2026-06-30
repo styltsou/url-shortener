@@ -21,7 +21,7 @@ export function useAnalytics(shortcode: string) {
 		queryKey: analyticsKeys.detail(shortcode),
 		queryFn: async () => {
 			const token = await getToken();
-			const response = await apiClient.get<AnalyticsData>(
+			const response = await apiClient.get<{ data: AnalyticsData }>(
 				`/api/v1/links/${shortcode}/analytics`,
 				token
 			);

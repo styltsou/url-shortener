@@ -29,7 +29,7 @@ import {
 	AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import type { Url } from "@/types/url";
-import { formatDateTime, getTimePeriod } from "@/lib/mock-data";
+import { formatDateTime, getTimePeriod } from "@/lib/date-utils";
 import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import {
@@ -44,8 +44,8 @@ import {
 	Trash2,
 } from "lucide-react";
 import { useDeleteLink, useUpdateLink } from "@/hooks/use-links";
+import { SHORT_DOMAIN } from "@/lib/env";
 import {
-	SHORT_DOMAIN,
 	MAX_VISIBLE_TAGS,
 	EXPIRATION_WARNING_HOURS,
 } from "@/lib/constants";

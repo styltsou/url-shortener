@@ -65,39 +65,16 @@ export function useLinks(options?: UseLinksOptions) {
 			const queryString = params.toString();
 			const url = `/api/v1/links?${queryString}`;
 
-			// The server returns SuccessResponse<Link[]> directly: {data: Link[], pagination?: {...}}
-			// apiClient.get returns the raw JSON response, which IS the SuccessResponse object
-			// So response IS the SuccessResponse<Link[]> object, not wrapped
 			const response = await apiClient.get<SuccessResponse<Link[]>>(url, token);
 
-			// response IS the SuccessResponse<Link[]> object: {data: Link[], pagination?: {...}}
-			// The apiClient.get type says it returns ApiSuccessResponse<T>, but it actually
-			// returns the raw JSON which is the SuccessResponse object directly
-			const successData = response as unknown as SuccessResponse<Link[]>;
-
-			// Handle case where data might be missing or not an array
-			if (!successData || !Array.isArray(successData.data)) {
-				return {
-					urls: [],
-					pagination: successData?.pagination || {
-						page: 1,
-						limit: limit,
-						total: 0,
-						total_pages: 0,
-					},
-				};
-			}
-
-			const finalPagination = successData.pagination || {
-				page: 1,
-				limit: limit,
-				total: 0,
-				total_pages: 0,
-			};
-
 			return {
-				urls: successData.data.map(linkToUrl),
-				pagination: finalPagination,
+				urls: (response.data ?? []).map(linkToUrl),
+				pagination: response.pagination ?? {
+					page,
+					limit,
+					total: 0,
+					total_pages: 0,
+				},
 			};
 		},
 	});
@@ -111,7 +88,7 @@ export function useLink(id: string) {
 		queryKey: linkKeys.detail(id),
 		queryFn: async () => {
 			const token = await getToken();
-			const response = await apiClient.get<Link>(`/api/v1/links/${id}`, token);
+			const response = await apiClient.get<{ data: Link }>(`/api/v1/links/${id}`, token);
 			return linkToUrl(response.data);
 		},
 		enabled: !!id,
@@ -126,7 +103,7 @@ export function useCreateLink() {
 	return useMutation({
 		mutationFn: async (data: CreateLinkRequest) => {
 			const token = await getToken();
-			const response = await apiClient.post<Link>("/api/v1/links", data, token);
+			const response = await apiClient.post<{ data: Link }>("/api/v1/links", data, token);
 			return linkToUrl(response.data);
 		},
 		onSuccess: () => {
@@ -154,115 +131,22 @@ export function useUpdateLink() {
 			data: UpdateLinkRequest;
 		}) => {
 			const token = await getToken();
-			const response = await apiClient.patch<Link>(
+			const response = await apiClient.patch<{ data: Link }>(
 				`/api/v1/links/${id}`,
 				data,
 				token
 			);
 			return linkToUrl(response.data);
 		},
-		onMutate: async ({ id, data }) => {
-			// Only do optimistic updates for is_active changes
-			if (data.is_active === undefined) {
-				return;
-			}
-
-			// Cancel any outgoing refetches (so they don't overwrite our optimistic update)
-			await queryClient.cancelQueries({ queryKey: linkKeys.lists() });
-			await queryClient.cancelQueries({ queryKey: linkKeys.detail(id) });
-
-			// Get all list queries from cache and snapshot them
-			const queryCache = queryClient.getQueryCache();
-			const allListQueries = queryCache.findAll({ queryKey: linkKeys.lists() });
-			const previousQueries = new Map<string, UseLinksResult>();
-
-			// Snapshot all list queries
-			allListQueries.forEach((query) => {
-				const queryData = query.state.data as UseLinksResult | undefined;
-				if (queryData) {
-					previousQueries.set(JSON.stringify(query.queryKey), { ...queryData });
-				}
-			});
-
-			// Snapshot the detail query
-			const previousLink = queryClient.getQueryData<Url>(linkKeys.detail(id));
-
-			// Optimistically update all list queries
-			allListQueries.forEach((query) => {
-				const queryData = query.state.data as UseLinksResult | undefined;
-				if (queryData && queryData.urls) {
-					const updatedUrls = queryData.urls.map((link) =>
-						link.id === id ? { ...link, isActive: data.is_active } : link
-					);
-					queryClient.setQueryData<UseLinksResult>(query.queryKey, {
-						...queryData,
-						urls: updatedUrls,
-					});
-				}
-			});
-
-			// Optimistically update the detail
-			if (previousLink) {
-				queryClient.setQueryData<Url>(linkKeys.detail(id), {
-					...previousLink,
-					isActive: data.is_active,
-				});
-			}
-
-			// Return a context object with the snapshotted values
-			return { previousQueries, previousLink };
-		},
-		onError: (error: Error, variables, context) => {
-			// If the mutation fails, use the context returned from onMutate to roll back
-			if (context?.previousQueries) {
-				context.previousQueries.forEach((previousData, queryKeyStr) => {
-					const queryKey = JSON.parse(queryKeyStr);
-					queryClient.setQueryData<UseLinksResult>(queryKey, previousData);
-				});
-			}
-			if (context?.previousLink) {
-				queryClient.setQueryData(
-					linkKeys.detail(variables.id),
-					context.previousLink
-				);
-			}
-			toast.error(error.message || "Failed to update link");
-		},
-		onSuccess: (updatedLink, variables) => {
-			// Update all list queries with the server response
-			if (updatedLink) {
-				const queryCache = queryClient.getQueryCache();
-				const allListQueries = queryCache.findAll({
-					queryKey: linkKeys.lists(),
-				});
-
-				allListQueries.forEach((query) => {
-					const queryData = query.state.data as UseLinksResult | undefined;
-					if (queryData && queryData.urls) {
-						const updatedUrls = queryData.urls.map((link) =>
-							link.id === variables.id ? updatedLink : link
-						);
-						queryClient.setQueryData<UseLinksResult>(query.queryKey, {
-							...queryData,
-							urls: updatedUrls,
-						});
-					}
-				});
-
-				// Also update the detail query if it exists
-				queryClient.setQueryData<Url>(
-					linkKeys.detail(variables.id),
-					updatedLink
-				);
-			}
-
-			// Use refetchQueries instead of invalidateQueries to keep the optimistic update visible
-			// during refetch. This prevents the cache from being cleared during refetch.
-			queryClient.refetchQueries({ queryKey: linkKeys.lists() });
-			queryClient.refetchQueries({
+		onSuccess: (_, variables) => {
+			queryClient.invalidateQueries({ queryKey: linkKeys.lists() });
+			queryClient.invalidateQueries({
 				queryKey: linkKeys.detail(variables.id),
 			});
 			toast.success("Link updated successfully");
+		},
+		onError: (error) => {
+			toast.error(error.message || "Failed to update link");
 		},
 	});
 }

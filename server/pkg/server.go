@@ -25,22 +25,34 @@ import (
 )
 
 // sanitizeDSN redacts the password portion of a connection string for safe logging.
+// Handles formats like:
+//
+//	postgres://user:pass@host/db         → postgres://user:****@host/db
+//	postgres://user@host/db              → postgres://user@host/db (no password)
+//	redis://:password@host:6379          → redis://:****@host:6379
+//	redis://user:password@host:6379      → redis://user:****@host:6379
 func sanitizeDSN(dsn string) string {
-	// Handle postgres://user:pass@host/db format
-	if strings.Contains(dsn, "://") {
-		before, after, found := strings.Cut(dsn, "://")
-		if !found {
-			return dsn
-		}
-		// Find the @ sign after credentials
-		if atIdx := strings.Index(after, "@"); atIdx > 0 {
-			creds := after[:atIdx]
-			if colonIdx := strings.Index(creds, ":"); colonIdx > 0 {
-				return before + "://" + creds[:colonIdx+1] + "****" + after[atIdx:]
-			}
-		}
+	schemeIdx := strings.Index(dsn, "://")
+	if schemeIdx < 0 {
+		return dsn
 	}
-	return dsn
+	scheme := dsn[:schemeIdx]
+	rest := dsn[schemeIdx+3:]
+
+	atIdx := strings.Index(rest, "@")
+	if atIdx < 0 {
+		return dsn
+	}
+	credentials := rest[:atIdx]
+	hostPart := rest[atIdx:]
+
+	colonIdx := strings.Index(credentials, ":")
+	if colonIdx < 0 {
+		return dsn
+	}
+	// For redis://:password@host, user is empty so the colon is at position 0
+	redactedUser := credentials[:colonIdx+1]
+	return scheme + "://" + redactedUser + "****" + hostPart
 }
 
 // Server encapsulates the HTTP server, router, database pool, and context
@@ -48,7 +60,7 @@ type Server struct {
 	Context          context.Context
 	Pool             *pgxpool.Pool
 	RedisClient      *redis.Client
-	AnalyticsClient  *analytics.Client
+	AnalyticsClient  analytics.ClientInterface
 	Router           *chi.Mux
 	Logger           logger.Logger
 }
@@ -115,6 +127,7 @@ func New(config *config.Config, log logger.Logger) (*Server, error) {
 		MaxOpenConns:    config.ClickhouseMaxOpenConns,
 		MaxIdleConns:    config.ClickhouseMaxIdleConns,
 		ConnMaxLifetime: time.Duration(config.ClickhouseConnMaxLifeMin) * time.Minute,
+		TableName:       config.ClickhouseTableName,
 	}, s.Logger)
 	if analyticsErr != nil {
 		log.Warn("ClickHouse analytics disabled",
@@ -159,11 +172,9 @@ func (s *Server) CloseConnections() {
 		}
 	}
 
-	if s.AnalyticsClient != nil {
-		if err := s.AnalyticsClient.Close(); err != nil {
-			s.Logger.Error("Error closing ClickHouse connection",
-				zap.Error(err),
-			)
-		}
+	if err := s.AnalyticsClient.Close(); err != nil {
+		s.Logger.Error("Error closing ClickHouse connection",
+			zap.Error(err),
+		)
 	}
 }

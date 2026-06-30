@@ -36,9 +36,4 @@ func parseUUIDParam(w http.ResponseWriter, r *http.Request, log logger.Logger) (
 	return parsed, true
 }
 
-func normalizeSlice[T any](s []T) []T {
-	if s == nil {
-		return []T{}
-	}
-	return s
-}
+
