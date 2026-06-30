@@ -3,6 +3,10 @@ SELECT id, name, created_at, updated_at FROM tags
 WHERE user_id = $1
 ORDER BY name;
 
+-- name: CountOwnedTags :one
+SELECT COUNT(DISTINCT id) FROM tags
+WHERE user_id = $1 AND id = ANY(sqlc.arg(tag_i_ds)::uuid[]);
+
 -- name: CreateTag :one
 INSERT INTO tags (name, user_id)
 VALUES ($1, $2)

@@ -26,36 +26,37 @@ func (q *Queries) CountActiveLinks(ctx context.Context, userID string) (int64, e
 }
 
 const countUserLinks = `-- name: CountUserLinks :one
-SELECT COUNT(DISTINCT l.id) as total
-FROM links l
-WHERE l.user_id = $1 
-  AND l.deleted_at IS NULL
-  AND (
-    -- If is_active filter is NULL, show all links
-    $2::boolean IS NULL
-    OR (
-      -- Active filter: is_active = true AND (no expiration OR not expired)
-      $2::boolean = true
-      AND COALESCE(l.is_active, true) = true
-      AND (l.expires_at IS NULL OR l.expires_at > NOW())
-    )
-    OR (
-      -- Inactive filter: is_active = false OR expired
-      $2::boolean = false
+WITH filtered_links AS (
+    SELECT l.id
+    FROM links l
+    WHERE l.user_id = $1
+      AND l.deleted_at IS NULL
       AND (
-        COALESCE(l.is_active, true) = false
-        OR (l.expires_at IS NOT NULL AND l.expires_at <= NOW())
+        $2::boolean IS NULL
+        OR (
+          $2::boolean = true
+          AND COALESCE(l.is_active, true) = true
+          AND (l.expires_at IS NULL OR l.expires_at > NOW())
+        )
+        OR (
+          $2::boolean = false
+          AND (
+            COALESCE(l.is_active, true) = false
+            OR (l.expires_at IS NOT NULL AND l.expires_at <= NOW())
+          )
+        )
       )
-    )
-  )
-  AND (
-    $3::uuid[] IS NULL 
-    OR l.id IN (
-      SELECT DISTINCT lt.link_id
-      FROM link_tags lt
-      WHERE lt.tag_id = ANY($3::uuid[])
-    )
-  )
+      AND (
+        $3::uuid[] IS NULL
+        OR EXISTS (
+          SELECT 1
+          FROM link_tags filter_lt
+          WHERE filter_lt.link_id = l.id
+            AND filter_lt.tag_id = ANY($3::uuid[])
+        )
+      )
+)
+SELECT COUNT(*) as total FROM filtered_links
 `
 
 type CountUserLinksParams struct {
@@ -364,6 +365,36 @@ func (q *Queries) ListUserLinkIDs(ctx context.Context, userID string) ([]uuid.UU
 }
 
 const listUserLinks = `-- name: ListUserLinks :many
+WITH filtered_links AS (
+    SELECT l.id, l.shortcode, l.original_url, l.user_id, l.expires_at, l.created_at, l.updated_at, l.deleted_at, l.is_active
+    FROM links l
+    WHERE l.user_id = $1
+      AND l.deleted_at IS NULL
+      AND (
+        $4::boolean IS NULL
+        OR (
+          $4::boolean = true
+          AND COALESCE(l.is_active, true) = true
+          AND (l.expires_at IS NULL OR l.expires_at > NOW())
+        )
+        OR (
+          $4::boolean = false
+          AND (
+            COALESCE(l.is_active, true) = false
+            OR (l.expires_at IS NOT NULL AND l.expires_at <= NOW())
+          )
+        )
+      )
+      AND (
+        $5::uuid[] IS NULL
+        OR EXISTS (
+          SELECT 1
+          FROM link_tags filter_lt
+          WHERE filter_lt.link_id = l.id
+            AND filter_lt.tag_id = ANY($5::uuid[])
+        )
+      )
+)
 SELECT 
     l.id,
     l.shortcode,
@@ -382,44 +413,20 @@ SELECT
         ) FILTER (WHERE t.id IS NOT NULL),
         '[]'::json
     ) as tags
-FROM links l
+FROM filtered_links l
 LEFT JOIN link_tags lt ON l.id = lt.link_id
 LEFT JOIN tags t ON lt.tag_id = t.id
-WHERE l.user_id = $1 
-  AND l.deleted_at IS NULL
-  AND (
-    -- If is_active filter is NULL, show all links
-    $2::boolean IS NULL
-    OR (
-      -- Active filter: is_active = true AND (no expiration OR not expired)
-      $2::boolean = true
-      AND COALESCE(l.is_active, true) = true
-      AND (l.expires_at IS NULL OR l.expires_at > NOW())
-    )
-    OR (
-      -- Inactive filter: is_active = false OR expired
-      $2::boolean = false
-      AND (
-        COALESCE(l.is_active, true) = false
-        OR (l.expires_at IS NOT NULL AND l.expires_at <= NOW())
-      )
-    )
-  )
-GROUP BY l.id
-HAVING (
-    $3::uuid[] IS NULL 
-    OR COUNT(CASE WHEN t.id = ANY($3::uuid[]) THEN 1 END) > 0
-)
+GROUP BY l.id, l.shortcode, l.original_url, l.expires_at, l.is_active, l.created_at, l.updated_at
 ORDER BY l.created_at DESC
-LIMIT $5 OFFSET $4
+LIMIT $3 OFFSET $2
 `
 
 type ListUserLinksParams struct {
 	UserID   string      `json:"user_id"`
-	IsActive *bool       `json:"is_active"`
-	TagIds   []uuid.UUID `json:"tag_ids"`
 	Offset   int32       `json:"offset"`
 	Limit    int32       `json:"limit"`
+	IsActive *bool       `json:"is_active"`
+	TagIds   []uuid.UUID `json:"tag_ids"`
 }
 
 type ListUserLinksRow struct {
@@ -436,10 +443,10 @@ type ListUserLinksRow struct {
 func (q *Queries) ListUserLinks(ctx context.Context, arg ListUserLinksParams) ([]ListUserLinksRow, error) {
 	rows, err := q.db.Query(ctx, listUserLinks,
 		arg.UserID,
-		arg.IsActive,
-		arg.TagIds,
 		arg.Offset,
 		arg.Limit,
+		arg.IsActive,
+		arg.TagIds,
 	)
 	if err != nil {
 		return nil, err
@@ -521,18 +528,22 @@ UPDATE links
 SET 
     shortcode = COALESCE($3, shortcode),
     is_active = COALESCE($4, is_active),
-    expires_at = COALESCE($5, expires_at),
+    expires_at = CASE
+        WHEN $5::boolean THEN $6
+        ELSE expires_at
+    END,
     updated_at = NOW()
 WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL
 RETURNING id, shortcode, original_url, is_active, expires_at, created_at, updated_at
 `
 
 type UpdateLinkParams struct {
-	ID        uuid.UUID        `json:"id"`
-	UserID    string           `json:"user_id"`
-	Shortcode *string          `json:"shortcode"`
-	IsActive  *bool            `json:"is_active"`
-	ExpiresAt pgtype.Timestamp `json:"expires_at"`
+	ID           uuid.UUID        `json:"id"`
+	UserID       string           `json:"user_id"`
+	Shortcode    *string          `json:"shortcode"`
+	IsActive     *bool            `json:"is_active"`
+	ExpiresAtSet bool             `json:"expires_at_set"`
+	ExpiresAt    pgtype.Timestamp `json:"expires_at"`
 }
 
 type UpdateLinkRow struct {
@@ -551,6 +562,7 @@ func (q *Queries) UpdateLink(ctx context.Context, arg UpdateLinkParams) (UpdateL
 		arg.UserID,
 		arg.Shortcode,
 		arg.IsActive,
+		arg.ExpiresAtSet,
 		arg.ExpiresAt,
 	)
 	var i UpdateLinkRow

@@ -17,13 +17,14 @@ export interface Link {
 	created_at: string; // ISO date string
 	updated_at: string | null; // ISO date string
 	is_active: boolean;
-	tags?: Tag[]; // Optional - create response doesn't include tags
+	tags: Tag[];
 }
 
 export interface CreateLinkRequest {
 	url: string;
 	shortcode?: string;
 	expires_at?: string | null; // ISO 8601 datetime string
+	tag_ids?: string[];
 }
 
 export interface UpdateLinkRequest {
@@ -63,11 +64,10 @@ export function linkToUrl(link: Link): Url {
 		createdAt: new Date(link.created_at),
 		expiresAt: link.expires_at ? new Date(link.expires_at) : null,
 		clicks: link.clicks || 0,
-		tags:
-			link.tags?.map((tag) => ({
-				id: tag.id,
-				name: tag.name,
-			})) || [],
+		tags: link.tags.map((tag) => ({
+			id: tag.id,
+			name: tag.name,
+		})),
 		isActive: link.is_active !== false,
 	};
 }

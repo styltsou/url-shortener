@@ -28,6 +28,7 @@ type mockQueries struct {
 	DeleteLinkFunc                 func(ctx context.Context, arg db.DeleteLinkParams) (db.DeleteLinkRow, error)
 	AddTagsToLinkFunc              func(ctx context.Context, arg db.AddTagsToLinkParams) error
 	RemoveTagsFromLinkFunc         func(ctx context.Context, arg db.RemoveTagsFromLinkParams) error
+	CountOwnedTagsFunc             func(ctx context.Context, arg db.CountOwnedTagsParams) (int64, error)
 	GetLinkByIdAndUserWithTagsFunc func(ctx context.Context, arg db.GetLinkByIdAndUserWithTagsParams) (db.GetLinkByIdAndUserWithTagsRow, error)
 	GetRecentLinksFunc             func(ctx context.Context, arg db.GetRecentLinksParams) ([]db.GetRecentLinksRow, error)
 	CountActiveLinksFunc           func(ctx context.Context, userID string) (int64, error)
@@ -102,6 +103,13 @@ func (m *mockQueries) RemoveTagsFromLink(ctx context.Context, arg db.RemoveTagsF
 		return m.RemoveTagsFromLinkFunc(ctx, arg)
 	}
 	return errors.New("not implemented")
+}
+
+func (m *mockQueries) CountOwnedTags(ctx context.Context, arg db.CountOwnedTagsParams) (int64, error) {
+	if m.CountOwnedTagsFunc != nil {
+		return m.CountOwnedTagsFunc(ctx, arg)
+	}
+	return int64(len(arg.TagIDs)), nil
 }
 
 func (m *mockQueries) GetLinkByIdAndUserWithTags(ctx context.Context, arg db.GetLinkByIdAndUserWithTagsParams) (db.GetLinkByIdAndUserWithTagsRow, error) {
@@ -1162,6 +1170,9 @@ func TestLinkService_UpdateLink(t *testing.T) {
 				if arg.ExpiresAt.Valid {
 					t.Errorf("UpdateLink should not update ExpiresAt when nil")
 				}
+				if arg.ExpiresAtSet {
+					t.Errorf("UpdateLink should not set ExpiresAtSet when expiration is omitted")
+				}
 				return expectedRow, nil
 			},
 		}
@@ -1172,7 +1183,7 @@ func TestLinkService_UpdateLink(t *testing.T) {
 		}
 
 		shortcodePtr := &newShortcode
-		updatedLink, err := service.UpdateLink(ctx, userID, linkID, shortcodePtr, nil, nil)
+		updatedLink, err := service.UpdateLink(ctx, userID, linkID, shortcodePtr, nil, false, nil)
 
 		if err != nil {
 			t.Errorf("UpdateLink() error = %v, want nil", err)
@@ -1206,7 +1217,7 @@ func TestLinkService_UpdateLink(t *testing.T) {
 			logger:  createTestLogger(),
 		}
 
-		updatedLink, err := service.UpdateLink(ctx, userID, linkID, nil, &isActive, nil)
+		updatedLink, err := service.UpdateLink(ctx, userID, linkID, nil, &isActive, false, nil)
 
 		if err != nil {
 			t.Errorf("UpdateLink() error = %v, want nil", err)
@@ -1228,6 +1239,9 @@ func TestLinkService_UpdateLink(t *testing.T) {
 				if !arg.ExpiresAt.Valid || !arg.ExpiresAt.Time.Equal(futureTime) {
 					t.Errorf("UpdateLink called with wrong ExpiresAt: got %v, want %v", arg.ExpiresAt, futureTime)
 				}
+				if !arg.ExpiresAtSet {
+					t.Errorf("UpdateLink should set ExpiresAtSet when expiration is provided")
+				}
 				if arg.Shortcode != nil {
 					t.Errorf("UpdateLink should not update Shortcode when nil")
 				}
@@ -1240,7 +1254,7 @@ func TestLinkService_UpdateLink(t *testing.T) {
 			logger:  createTestLogger(),
 		}
 
-		updatedLink, err := service.UpdateLink(ctx, userID, linkID, nil, nil, &futureTime)
+		updatedLink, err := service.UpdateLink(ctx, userID, linkID, nil, nil, true, &futureTime)
 
 		if err != nil {
 			t.Errorf("UpdateLink() error = %v, want nil", err)
@@ -1269,6 +1283,9 @@ func TestLinkService_UpdateLink(t *testing.T) {
 				if !arg.ExpiresAt.Valid {
 					t.Errorf("UpdateLink called with invalid ExpiresAt")
 				}
+				if !arg.ExpiresAtSet {
+					t.Errorf("UpdateLink should set ExpiresAtSet when expiration is provided")
+				}
 				return expectedRow, nil
 			},
 		}
@@ -1279,7 +1296,7 @@ func TestLinkService_UpdateLink(t *testing.T) {
 		}
 
 		shortcodePtr := &newShortcode
-		updatedLink, err := service.UpdateLink(ctx, userID, linkID, shortcodePtr, &isActive, &futureTime)
+		updatedLink, err := service.UpdateLink(ctx, userID, linkID, shortcodePtr, &isActive, true, &futureTime)
 
 		if err != nil {
 			t.Errorf("UpdateLink() error = %v, want nil", err)
@@ -1305,7 +1322,7 @@ func TestLinkService_UpdateLink(t *testing.T) {
 		}
 
 		shortcodePtr := &newShortcode
-		_, err := service.UpdateLink(ctx, userID, linkID, shortcodePtr, nil, nil)
+		_, err := service.UpdateLink(ctx, userID, linkID, shortcodePtr, nil, false, nil)
 
 		if err == nil {
 			t.Errorf("UpdateLink() expected error for not found")
@@ -1328,7 +1345,7 @@ func TestLinkService_UpdateLink(t *testing.T) {
 		}
 
 		shortcodePtr := &newShortcode
-		_, err := service.UpdateLink(ctx, userID, linkID, shortcodePtr, nil, nil)
+		_, err := service.UpdateLink(ctx, userID, linkID, shortcodePtr, nil, false, nil)
 
 		if err == nil {
 			t.Errorf("UpdateLink() expected error for not found")
@@ -1358,7 +1375,7 @@ func TestLinkService_UpdateLink(t *testing.T) {
 		}
 
 		shortcodePtr := &newShortcode
-		_, err := service.UpdateLink(ctx, userID, linkID, shortcodePtr, nil, nil)
+		_, err := service.UpdateLink(ctx, userID, linkID, shortcodePtr, nil, false, nil)
 
 		if err == nil {
 			t.Errorf("UpdateLink() expected error for shortcode conflict")
@@ -1386,7 +1403,7 @@ func TestLinkService_UpdateLink(t *testing.T) {
 		}
 
 		shortcodePtr := &newShortcode
-		_, err := service.UpdateLink(ctx, userID, linkID, shortcodePtr, nil, nil)
+		_, err := service.UpdateLink(ctx, userID, linkID, shortcodePtr, nil, false, nil)
 
 		if err == nil {
 			t.Errorf("UpdateLink() expected error for database failure")
@@ -1396,7 +1413,7 @@ func TestLinkService_UpdateLink(t *testing.T) {
 		}
 	})
 
-	t.Run("nil expires_at converts to invalid timestamp", func(t *testing.T) {
+	t.Run("omitted expires_at leaves expiration unchanged", func(t *testing.T) {
 		expectedRow := createTestUpdateLinkRow(linkID, "oldcode", originalURL, true)
 
 		mockQueries := &mockQueries{
@@ -1406,6 +1423,9 @@ func TestLinkService_UpdateLink(t *testing.T) {
 			UpdateLinkFunc: func(ctx context.Context, arg db.UpdateLinkParams) (db.UpdateLinkRow, error) {
 				if arg.ExpiresAt.Valid {
 					t.Errorf("UpdateLink should pass invalid ExpiresAt when nil pointer provided")
+				}
+				if arg.ExpiresAtSet {
+					t.Errorf("UpdateLink should not set ExpiresAtSet when expiration is omitted")
 				}
 				return expectedRow, nil
 			},
@@ -1417,7 +1437,37 @@ func TestLinkService_UpdateLink(t *testing.T) {
 			logger:  createTestLogger(),
 		}
 
-		_, err := service.UpdateLink(ctx, userID, linkID, nil, nil, nil)
+		_, err := service.UpdateLink(ctx, userID, linkID, nil, nil, false, nil)
+		if err != nil {
+			t.Errorf("UpdateLink() error = %v, want nil", err)
+		}
+	})
+
+	t.Run("explicit nil expires_at clears expiration", func(t *testing.T) {
+		expectedRow := createTestUpdateLinkRow(linkID, "oldcode", originalURL, true)
+
+		mockQueries := &mockQueries{
+			GetLinkByIdAndUserFunc: func(ctx context.Context, arg db.GetLinkByIdAndUserParams) (db.GetLinkByIdAndUserRow, error) {
+				return createTestGetLinkByIdAndUserRow(linkID, "oldcode", originalURL, userID), nil
+			},
+			UpdateLinkFunc: func(ctx context.Context, arg db.UpdateLinkParams) (db.UpdateLinkRow, error) {
+				if !arg.ExpiresAtSet {
+					t.Errorf("UpdateLink should set ExpiresAtSet for explicit null")
+				}
+				if arg.ExpiresAt.Valid {
+					t.Errorf("UpdateLink should pass invalid ExpiresAt for explicit null")
+				}
+				return expectedRow, nil
+			},
+		}
+
+		service := &LinkService{
+			queries: mockQueries,
+			cache:   nil,
+			logger:  createTestLogger(),
+		}
+
+		_, err := service.UpdateLink(ctx, userID, linkID, nil, nil, true, nil)
 		if err != nil {
 			t.Errorf("UpdateLink() error = %v, want nil", err)
 		}
@@ -1639,6 +1689,9 @@ func TestLinkService_AddTagsToLink(t *testing.T) {
 		}
 
 		mockQueries := &mockQueries{
+			GetLinkByIdAndUserFunc: func(ctx context.Context, arg db.GetLinkByIdAndUserParams) (db.GetLinkByIdAndUserRow, error) {
+				return db.GetLinkByIdAndUserRow{ID: linkID}, nil
+			},
 			AddTagsToLinkFunc: func(ctx context.Context, arg db.AddTagsToLinkParams) error {
 				if arg.LinkID != linkID {
 					t.Errorf("AddTagsToLink called with wrong LinkID: got %s, want %s", arg.LinkID, linkID)
@@ -1721,6 +1774,9 @@ func TestLinkService_AddTagsToLink(t *testing.T) {
 	t.Run("handles database errors", func(t *testing.T) {
 		dbError := errors.New("database query failed")
 		mockQueries := &mockQueries{
+			GetLinkByIdAndUserFunc: func(ctx context.Context, arg db.GetLinkByIdAndUserParams) (db.GetLinkByIdAndUserRow, error) {
+				return db.GetLinkByIdAndUserRow{ID: linkID}, nil
+			},
 			AddTagsToLinkFunc: func(ctx context.Context, arg db.AddTagsToLinkParams) error {
 				return dbError
 			},
@@ -1737,6 +1793,38 @@ func TestLinkService_AddTagsToLink(t *testing.T) {
 
 		if err == nil {
 			t.Errorf("AddTagsToLink() expected error for database failure")
+		}
+	})
+
+	t.Run("rejects foreign tags before mutation", func(t *testing.T) {
+		mutated := false
+		mockQueries := &mockQueries{
+			GetLinkByIdAndUserFunc: func(ctx context.Context, arg db.GetLinkByIdAndUserParams) (db.GetLinkByIdAndUserRow, error) {
+				return db.GetLinkByIdAndUserRow{ID: linkID}, nil
+			},
+			CountOwnedTagsFunc: func(ctx context.Context, arg db.CountOwnedTagsParams) (int64, error) {
+				return 1, nil
+			},
+			AddTagsToLinkFunc: func(ctx context.Context, arg db.AddTagsToLinkParams) error {
+				mutated = true
+				return nil
+			},
+		}
+
+		service := &LinkService{
+			queries: mockQueries,
+			logger:  createTestLogger(),
+			runInTx: func(ctx context.Context, fn func(LinkQueries) error) error {
+				return fn(mockQueries)
+			},
+		}
+		_, err := service.AddTagsToLink(ctx, userID, linkID, []uuid.UUID{tagID1, tagID2})
+
+		if !errors.Is(err, apperrors.TagNotFound) {
+			t.Errorf("AddTagsToLink() error = %v, want TagNotFound", err)
+		}
+		if mutated {
+			t.Errorf("AddTagsToLink should not mutate when tag ownership validation fails")
 		}
 	})
 }
@@ -1761,6 +1849,9 @@ func TestLinkService_RemoveTagsFromLink(t *testing.T) {
 		}
 
 		mockQueries := &mockQueries{
+			GetLinkByIdAndUserFunc: func(ctx context.Context, arg db.GetLinkByIdAndUserParams) (db.GetLinkByIdAndUserRow, error) {
+				return db.GetLinkByIdAndUserRow{ID: linkID}, nil
+			},
 			RemoveTagsFromLinkFunc: func(ctx context.Context, arg db.RemoveTagsFromLinkParams) error {
 				if arg.LinkID != linkID {
 					t.Errorf("RemoveTagsFromLink called with wrong LinkID: got %s, want %s", arg.LinkID, linkID)
@@ -1843,6 +1934,9 @@ func TestLinkService_RemoveTagsFromLink(t *testing.T) {
 	t.Run("handles database errors", func(t *testing.T) {
 		dbError := errors.New("database query failed")
 		mockQueries := &mockQueries{
+			GetLinkByIdAndUserFunc: func(ctx context.Context, arg db.GetLinkByIdAndUserParams) (db.GetLinkByIdAndUserRow, error) {
+				return db.GetLinkByIdAndUserRow{ID: linkID}, nil
+			},
 			RemoveTagsFromLinkFunc: func(ctx context.Context, arg db.RemoveTagsFromLinkParams) error {
 				return dbError
 			},
@@ -1859,6 +1953,38 @@ func TestLinkService_RemoveTagsFromLink(t *testing.T) {
 
 		if err == nil {
 			t.Errorf("RemoveTagsFromLink() expected error for database failure")
+		}
+	})
+
+	t.Run("rejects foreign tags before mutation", func(t *testing.T) {
+		mutated := false
+		mockQueries := &mockQueries{
+			GetLinkByIdAndUserFunc: func(ctx context.Context, arg db.GetLinkByIdAndUserParams) (db.GetLinkByIdAndUserRow, error) {
+				return db.GetLinkByIdAndUserRow{ID: linkID}, nil
+			},
+			CountOwnedTagsFunc: func(ctx context.Context, arg db.CountOwnedTagsParams) (int64, error) {
+				return 1, nil
+			},
+			RemoveTagsFromLinkFunc: func(ctx context.Context, arg db.RemoveTagsFromLinkParams) error {
+				mutated = true
+				return nil
+			},
+		}
+
+		service := &LinkService{
+			queries: mockQueries,
+			logger:  createTestLogger(),
+			runInTx: func(ctx context.Context, fn func(LinkQueries) error) error {
+				return fn(mockQueries)
+			},
+		}
+		_, err := service.RemoveTagsFromLink(ctx, userID, linkID, []uuid.UUID{tagID1, tagID2})
+
+		if !errors.Is(err, apperrors.TagNotFound) {
+			t.Errorf("RemoveTagsFromLink() error = %v, want TagNotFound", err)
+		}
+		if mutated {
+			t.Errorf("RemoveTagsFromLink should not mutate when tag ownership validation fails")
 		}
 	})
 }

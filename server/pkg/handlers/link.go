@@ -35,9 +35,10 @@ import (
 type LinkService interface {
 	GetOriginalURL(ctx context.Context, code string) (db.GetLinkForRedirectRow, error)
 	CreateShortLink(ctx context.Context, userID string, originalURL string, customShortcode *string, expiresAt *time.Time) (db.TryCreateLinkRow, error)
+	CreateShortLinkWithTags(ctx context.Context, userID string, originalURL string, customShortcode *string, expiresAt *time.Time, tagIDs []uuid.UUID) (db.GetLinkByIdAndUserWithTagsRow, error)
 	ListAllLinks(ctx context.Context, userID string, isActive *bool, tagIDs []uuid.UUID, page, limit int) (*service.ListLinksResult, error)
 	GetLinkByShortcode(ctx context.Context, userID string, shortcode string) (db.GetLinkByShortcodeAndUserRow, error)
-	UpdateLink(ctx context.Context, userID string, id uuid.UUID, shortcode *string, isActive *bool, expiresAt *time.Time) (db.UpdateLinkRow, error)
+	UpdateLink(ctx context.Context, userID string, id uuid.UUID, shortcode *string, isActive *bool, expiresAtSet bool, expiresAt *time.Time) (db.UpdateLinkRow, error)
 	DeleteLink(ctx context.Context, userID string, id uuid.UUID) (db.DeleteLinkRow, error)
 	AddTagsToLink(ctx context.Context, userID string, linkID uuid.UUID, tagIDs []uuid.UUID) (db.GetLinkByIdAndUserWithTagsRow, error)
 	RemoveTagsFromLink(ctx context.Context, userID string, linkID uuid.UUID, tagIDs []uuid.UUID) (db.GetLinkByIdAndUserWithTagsRow, error)
@@ -96,12 +97,13 @@ func (h *LinkHandler) CreateLink(w http.ResponseWriter, r *http.Request) {
 	reqBody := mw.GetRequestBodyFromContext[dto.CreateLink](r.Context())
 	userID := mw.GetUserIDFromContext(r.Context())
 
-	createdLink, err := h.LinkService.CreateShortLink(
+	createdLink, err := h.LinkService.CreateShortLinkWithTags(
 		r.Context(),
 		userID,
 		reqBody.URL,
 		reqBody.Shortcode,
 		reqBody.ExpiresAt,
+		reqBody.TagIDs,
 	)
 	if err != nil {
 		h.handleError(w, r, err)
@@ -116,8 +118,13 @@ func (h *LinkHandler) CreateLink(w http.ResponseWriter, r *http.Request) {
 	)
 
 	render.Status(r, http.StatusCreated)
-	render.JSON(w, r, &dto.SuccessResponse[db.TryCreateLinkRow]{
-		Data: createdLink,
+	response, err := dto.LinkFromWithTagsRow(createdLink)
+	if err != nil {
+		h.handleError(w, r, err)
+		return
+	}
+	render.JSON(w, r, &dto.SuccessResponse[dto.LinkResponse]{
+		Data: response,
 	})
 }
 
@@ -125,101 +132,43 @@ func (h *LinkHandler) CreateLink(w http.ResponseWriter, r *http.Request) {
 func (h *LinkHandler) ListLinks(w http.ResponseWriter, r *http.Request) {
 	userID := mw.GetUserIDFromContext(r.Context())
 
-	// Parse query parameters
-	var isActive *bool
-	var tagIDs []uuid.UUID
-
-	// Parse status filter: ?status=active|inactive|all
-	status := r.URL.Query().Get("status")
-	if status != "" && status != "all" {
-		switch status {
-		case "active":
-			val := true
-			isActive = &val
-		case "inactive":
-			val := false
-			isActive = &val
-		}
-	}
-
-	// Parse tag IDs: ?tags=id1,id2,id3
-	tagsParam := r.URL.Query().Get("tags")
-	if tagsParam != "" {
-		tagStrs := strings.Split(tagsParam, ",")
-		for _, tagStr := range tagStrs {
-			tagStr = strings.TrimSpace(tagStr)
-			if tagStr == "" {
-				continue
-			}
-			tagID, err := uuid.Parse(tagStr)
-			if err != nil {
-				h.logger.Warn("Invalid tag ID in query parameter",
-					zap.String("tag_id", tagStr),
-					zap.Error(err),
-				)
-
-				render.Status(r, http.StatusBadRequest)
-				render.JSON(w, r, dto.ErrorResponse{
-					Error: dto.ErrorObject{
-						Code:   apperrors.CodeInvalidID,
-						Title:  "Invalid tag ID format",
-						Detail: fmt.Sprintf("Tag ID '%s' is not a valid UUID", tagStr),
-					},
-				})
-				return
-			}
-			tagIDs = append(tagIDs, tagID)
-		}
-	}
-
-	// Parse pagination parameters: ?page=1&limit=5
-	page := 1
-	limit := 5
-	if pageStr := r.URL.Query().Get("page"); pageStr != "" {
-		if p, err := strconv.Atoi(pageStr); err == nil && p > 0 {
-			page = p
-		} else {
-			h.logger.Warn("Invalid page value, using default",
-				zap.String("provided", pageStr),
-				zap.Int("default", page),
-			)
-		}
-	}
-	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
-		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 {
-			limit = l
-		} else {
-			h.logger.Warn("Invalid limit value, using default",
-				zap.String("provided", limitStr),
-				zap.Int("default", limit),
-			)
-		}
+	query, parseErr := parseListLinksQuery(r)
+	if parseErr != nil {
+		h.logger.Warn("Invalid list links query",
+			zap.String("method", r.Method),
+			zap.String("path", r.URL.Path),
+			zap.String("detail", parseErr.Error.Detail),
+		)
+		render.Status(r, http.StatusBadRequest)
+		render.JSON(w, r, parseErr)
+		return
 	}
 
 	h.logger.Info("Listing user links",
 		zap.String("user_id", userID),
 		zap.String("method", r.Method),
 		zap.String("path", r.URL.Path),
-		zap.Any("is_active", isActive),
-		zap.Any("tag_ids", tagIDs),
-		zap.Int("page", page),
-		zap.Int("limit", limit),
+		zap.Any("is_active", query.IsActive),
+		zap.Any("tag_ids", query.TagIDs),
+		zap.Int("page", query.Page),
+		zap.Int("limit", query.Limit),
 	)
 
-	result, err := h.LinkService.ListAllLinks(r.Context(), userID, isActive, tagIDs, page, limit)
+	result, err := h.LinkService.ListAllLinks(r.Context(), userID, query.IsActive, query.TagIDs, query.Page, query.Limit)
 	if err != nil {
 		h.handleError(w, r, err)
 		return
 	}
 
-	// Ensure we always return an empty array (not null) when there are no links
-	if result.Links == nil {
-		result.Links = []db.ListUserLinksRow{}
+	links, err := dto.LinksFromListRows(result.Links)
+	if err != nil {
+		h.handleError(w, r, err)
+		return
 	}
 
 	render.Status(r, http.StatusOK)
-	render.JSON(w, r, &dto.SuccessResponse[[]db.ListUserLinksRow]{
-		Data: result.Links,
+	render.JSON(w, r, &dto.SuccessResponse[[]dto.LinkResponse]{
+		Data: links,
 		Pagination: &dto.PaginationMeta{
 			Page:       result.Page,
 			Limit:      result.Limit,
@@ -227,6 +176,73 @@ func (h *LinkHandler) ListLinks(w http.ResponseWriter, r *http.Request) {
 			TotalPages: result.TotalPages,
 		},
 	})
+}
+
+type listLinksQuery struct {
+	IsActive *bool
+	TagIDs   []uuid.UUID
+	Page     int
+	Limit    int
+}
+
+func parseListLinksQuery(r *http.Request) (listLinksQuery, *dto.ErrorResponse) {
+	query := listLinksQuery{Page: 1, Limit: 5}
+	values := r.URL.Query()
+
+	status := values.Get("status")
+	switch status {
+	case "", "all":
+	case "active":
+		active := true
+		query.IsActive = &active
+	case "inactive":
+		active := false
+		query.IsActive = &active
+	default:
+		return listLinksQuery{}, invalidQuery("invalid_request", "Invalid status filter", "status must be one of: active, inactive, all")
+	}
+
+	tagsParam := values.Get("tags")
+	if tagsParam != "" {
+		for _, tagStr := range strings.Split(tagsParam, ",") {
+			tagStr = strings.TrimSpace(tagStr)
+			if tagStr == "" {
+				continue
+			}
+			tagID, err := uuid.Parse(tagStr)
+			if err != nil {
+				return listLinksQuery{}, invalidQuery(string(apperrors.CodeInvalidID), "Invalid tag ID format", fmt.Sprintf("Tag ID '%s' is not a valid UUID", tagStr))
+			}
+			query.TagIDs = append(query.TagIDs, tagID)
+		}
+	}
+
+	if pageStr := values.Get("page"); pageStr != "" {
+		page, err := strconv.Atoi(pageStr)
+		if err != nil || page < 1 {
+			return listLinksQuery{}, invalidQuery("invalid_request", "Invalid page", "page must be a positive integer")
+		}
+		query.Page = page
+	}
+	if limitStr := values.Get("limit"); limitStr != "" {
+		limit, err := strconv.Atoi(limitStr)
+		if err != nil || limit < 1 {
+			return listLinksQuery{}, invalidQuery("invalid_request", "Invalid limit", "limit must be a positive integer")
+		}
+		query.Limit = limit
+	}
+
+	return query, nil
+}
+
+func invalidQuery(code string, title string, detail string) *dto.ErrorResponse {
+	return &dto.ErrorResponse{
+		Error: dto.ErrorObject{
+			Code:   apperrors.ErrorCode(code),
+			Title:  title,
+			Detail: detail,
+		},
+	}
 }
 
 // Get link by shortcode: GET /api/v1/links/{shortcode}
@@ -240,10 +256,14 @@ func (h *LinkHandler) GetLink(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	response, err := dto.LinkFromShortcodeRow(link)
+	if err != nil {
+		h.handleError(w, r, err)
+		return
+	}
+
 	render.Status(r, http.StatusOK)
-	render.JSON(w, r, &dto.SuccessResponse[db.GetLinkByShortcodeAndUserRow]{
-		Data: link,
-	})
+	render.JSON(w, r, &dto.SuccessResponse[dto.LinkResponse]{Data: response})
 }
 
 // Update link (PATCH code/expiry): PATCH /api/v1/links/{id}
@@ -263,7 +283,8 @@ func (h *LinkHandler) UpdateLink(w http.ResponseWriter, r *http.Request) {
 		linkID,
 		body.Shortcode,
 		body.IsActive,
-		body.ExpiresAt,
+		body.ExpiresAt.Set,
+		body.ExpiresAt.Value,
 	)
 
 	if err != nil {
@@ -273,8 +294,8 @@ func (h *LinkHandler) UpdateLink(w http.ResponseWriter, r *http.Request) {
 	}
 
 	render.Status(r, http.StatusOK)
-	render.JSON(w, r, dto.SuccessResponse[db.UpdateLinkRow]{
-		Data: updatedLink,
+	render.JSON(w, r, dto.SuccessResponse[dto.LinkResponse]{
+		Data: dto.LinkFromUpdateRow(updatedLink),
 	})
 }
 
@@ -296,8 +317,8 @@ func (h *LinkHandler) DeleteLink(w http.ResponseWriter, r *http.Request) {
 	}
 
 	render.Status(r, http.StatusOK)
-	render.JSON(w, r, &dto.SuccessResponse[db.DeleteLinkRow]{
-		Data: deletedLink,
+	render.JSON(w, r, &dto.SuccessResponse[dto.LinkResponse]{
+		Data: dto.LinkFromDeleteRow(deletedLink),
 	})
 }
 
@@ -319,8 +340,13 @@ func (h *LinkHandler) AddTagsToLink(w http.ResponseWriter, r *http.Request) {
 	}
 
 	render.Status(r, http.StatusOK)
-	render.JSON(w, r, &dto.SuccessResponse[db.GetLinkByIdAndUserWithTagsRow]{
-		Data: updatedLink,
+	response, err := dto.LinkFromWithTagsRow(updatedLink)
+	if err != nil {
+		h.handleError(w, r, err)
+		return
+	}
+	render.JSON(w, r, &dto.SuccessResponse[dto.LinkResponse]{
+		Data: response,
 	})
 }
 
@@ -342,8 +368,13 @@ func (h *LinkHandler) RemoveTagsFromLink(w http.ResponseWriter, r *http.Request)
 	}
 
 	render.Status(r, http.StatusOK)
-	render.JSON(w, r, &dto.SuccessResponse[db.GetLinkByIdAndUserWithTagsRow]{
-		Data: updatedLink,
+	response, err := dto.LinkFromWithTagsRow(updatedLink)
+	if err != nil {
+		h.handleError(w, r, err)
+		return
+	}
+	render.JSON(w, r, &dto.SuccessResponse[dto.LinkResponse]{
+		Data: response,
 	})
 }
 
@@ -481,6 +512,21 @@ func (h *LinkHandler) handleError(w http.ResponseWriter, r *http.Request, err er
 				Code:   apperrors.CodeCodeTaken,
 				Title:  apperrors.LinkShortcodeTaken.Error(),
 				Detail: "The provided shortcode is already in use",
+			},
+		})
+
+	case errors.Is(err, apperrors.TagNotFound):
+		h.logger.Warn("Tag not found",
+			zap.Error(err),
+			zap.String("method", r.Method),
+			zap.String("path", r.URL.Path),
+		)
+		render.Status(r, http.StatusNotFound)
+		render.JSON(w, r, dto.ErrorResponse{
+			Error: dto.ErrorObject{
+				Code:   apperrors.CodeTagNotFound,
+				Title:  apperrors.TagNotFound.Error(),
+				Detail: "One or more tags were not found",
 			},
 		})
 

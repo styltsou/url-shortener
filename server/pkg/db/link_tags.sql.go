@@ -13,15 +13,10 @@ import (
 
 const addTagsToLink = `-- name: AddTagsToLink :exec
 INSERT INTO link_tags (link_id, tag_id)
-SELECT $1, unnest($3::uuid[])
-WHERE EXISTS (
-    SELECT 1 FROM links l
-    WHERE l.id = $1 AND l.user_id = $2 AND l.deleted_at IS NULL
-)
-AND EXISTS (
-    SELECT 1 FROM tags t
-    WHERE t.id = ANY($3::uuid[]) AND t.user_id = $2
-)
+SELECT $1, t.id
+FROM tags t
+JOIN links l ON l.id = $1 AND l.user_id = $2 AND l.deleted_at IS NULL
+WHERE t.id = ANY($3::uuid[]) AND t.user_id = $2
 ON CONFLICT (link_id, tag_id) DO NOTHING
 `
 
@@ -31,24 +26,22 @@ type AddTagsToLinkParams struct {
 	TagIDs []uuid.UUID `json:"tag_i_ds"`
 }
 
-// Adds multiple tags to a link, ensuring both link and tags belong to the same user
+// Adds owned tags to an owned link
 func (q *Queries) AddTagsToLink(ctx context.Context, arg AddTagsToLinkParams) error {
 	_, err := q.db.Exec(ctx, addTagsToLink, arg.LinkID, arg.UserID, arg.TagIDs)
 	return err
 }
 
 const removeTagsFromLink = `-- name: RemoveTagsFromLink :exec
-DELETE FROM link_tags
-WHERE link_id = $1 
-  AND tag_id = ANY($3::uuid[])
-  AND EXISTS (
-      SELECT 1 FROM links l
-      WHERE l.id = $1 AND l.user_id = $2 AND l.deleted_at IS NULL
-  )
-  AND EXISTS (
-      SELECT 1 FROM tags t
-      WHERE t.id = ANY($3::uuid[]) AND t.user_id = $2
-  )
+DELETE FROM link_tags lt
+USING links l, tags t
+WHERE lt.link_id = $1
+  AND lt.tag_id = t.id
+  AND l.id = lt.link_id
+  AND l.user_id = $2
+  AND l.deleted_at IS NULL
+  AND t.user_id = $2
+  AND t.id = ANY($3::uuid[])
 `
 
 type RemoveTagsFromLinkParams struct {
@@ -57,7 +50,7 @@ type RemoveTagsFromLinkParams struct {
 	TagIDs []uuid.UUID `json:"tag_i_ds"`
 }
 
-// Removes multiple tags from a link, ensuring both link and tags belong to the same user
+// Removes owned tags from an owned link
 func (q *Queries) RemoveTagsFromLink(ctx context.Context, arg RemoveTagsFromLinkParams) error {
 	_, err := q.db.Exec(ctx, removeTagsFromLink, arg.LinkID, arg.UserID, arg.TagIDs)
 	return err

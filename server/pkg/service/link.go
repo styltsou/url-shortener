@@ -17,6 +17,7 @@ import (
 	"github.com/redis/go-redis/v9"
 	"github.com/styltsou/url-shortener/server/pkg/analytics"
 	"github.com/styltsou/url-shortener/server/pkg/db"
+	"github.com/styltsou/url-shortener/server/pkg/dto"
 	apperrors "github.com/styltsou/url-shortener/server/pkg/errors"
 	"github.com/styltsou/url-shortener/server/pkg/logger"
 	"go.uber.org/zap"
@@ -80,6 +81,7 @@ type LinkQueries interface {
 	DeleteLink(ctx context.Context, arg db.DeleteLinkParams) (db.DeleteLinkRow, error)
 	AddTagsToLink(ctx context.Context, arg db.AddTagsToLinkParams) error
 	RemoveTagsFromLink(ctx context.Context, arg db.RemoveTagsFromLinkParams) error
+	CountOwnedTags(ctx context.Context, arg db.CountOwnedTagsParams) (int64, error)
 	GetLinkByIdAndUserWithTags(ctx context.Context, arg db.GetLinkByIdAndUserWithTagsParams) (db.GetLinkByIdAndUserWithTagsRow, error)
 	GetRecentLinks(ctx context.Context, arg db.GetRecentLinksParams) ([]db.GetRecentLinksRow, error)
 	CountActiveLinks(ctx context.Context, userID string) (int64, error)
@@ -130,66 +132,103 @@ func (s *LinkService) CreateShortLink(
 	customShortcode *string,
 	expiresAt *time.Time,
 ) (db.TryCreateLinkRow, error) {
-	// Validate URL - return sentinel error that handlers will map
+	return s.createShortLink(ctx, s.queries, userID, originalURL, customShortcode, expiresAt)
+}
+
+func (s *LinkService) CreateShortLinkWithTags(
+	ctx context.Context,
+	userID string,
+	originalURL string,
+	customShortcode *string,
+	expiresAt *time.Time,
+	tagIDs []uuid.UUID,
+) (db.GetLinkByIdAndUserWithTagsRow, error) {
+	var created db.GetLinkByIdAndUserWithTagsRow
+	if err := s.runInTx(ctx, func(qtx LinkQueries) error {
+		link, err := s.createShortLink(ctx, qtx, userID, originalURL, customShortcode, expiresAt)
+		if err != nil {
+			return err
+		}
+
+		uniqueTagIDs := uniqueUUIDs(tagIDs)
+		if len(uniqueTagIDs) > 0 {
+			if err := s.validateOwnedTags(ctx, qtx, userID, uniqueTagIDs); err != nil {
+				return err
+			}
+			if err := qtx.AddTagsToLink(ctx, db.AddTagsToLinkParams{
+				LinkID: link.ID,
+				UserID: userID,
+				TagIDs: uniqueTagIDs,
+			}); err != nil {
+				return fmt.Errorf("failed to add tags to link: %w", err)
+			}
+		}
+
+		created, err = qtx.GetLinkByIdAndUserWithTags(ctx, db.GetLinkByIdAndUserWithTagsParams{
+			ID:     link.ID,
+			UserID: userID,
+		})
+		if err != nil {
+			return fmt.Errorf("failed to get created link: %w", err)
+		}
+		return nil
+	}); err != nil {
+		return db.GetLinkByIdAndUserWithTagsRow{}, err
+	}
+
+	return created, nil
+}
+
+func (s *LinkService) createShortLink(
+	ctx context.Context,
+	queries LinkQueries,
+	userID string,
+	originalURL string,
+	customShortcode *string,
+	expiresAt *time.Time,
+) (db.TryCreateLinkRow, error) {
 	if err := validateURL(originalURL); err != nil {
 		return db.TryCreateLinkRow{}, err
 	}
 
-	// Prepare expires_at for database
-	// When expiresAt is nil, pgtype.Timestamp{Valid: false} will be converted to NULL in PostgreSQL
 	var expiresAtTimestamp pgtype.Timestamp
 	if expiresAt != nil {
 		expiresAtTimestamp = pgtype.Timestamp{
 			Time:  *expiresAt,
 			Valid: true,
 		}
-	} else {
-		expiresAtTimestamp = pgtype.Timestamp{Valid: false} // NULL expiration date
 	}
 
-	// If custom shortcode is provided, try once and return error on conflict
 	if customShortcode != nil {
-		link, err := s.queries.TryCreateLink(ctx, db.TryCreateLinkParams{
+		link, err := queries.TryCreateLink(ctx, db.TryCreateLinkParams{
 			Shortcode:   *customShortcode,
 			OriginalUrl: originalURL,
 			UserID:      userID,
 			ExpiresAt:   expiresAtTimestamp,
 		})
-
 		if err == nil {
 			return link, nil
 		}
-
-		// Collision: ON CONFLICT DO NOTHING returned no rows
 		if errors.Is(err, sql.ErrNoRows) {
 			return db.TryCreateLinkRow{},
 				fmt.Errorf("%w: %s", apperrors.LinkShortcodeTaken, *customShortcode)
 		}
-
-		// Other database error - wrap with context
-		return db.TryCreateLinkRow{},
-			fmt.Errorf("failed to create link: %w", err)
+		return db.TryCreateLinkRow{}, fmt.Errorf("failed to create link: %w", err)
 	}
 
-	// Auto-generate deterministic shortcode based on URL + userID
 	code := generateCode(originalURL, userID)
-	link, err := s.queries.TryCreateLink(ctx, db.TryCreateLinkParams{
+	link, err := queries.TryCreateLink(ctx, db.TryCreateLinkParams{
 		Shortcode:   code,
 		OriginalUrl: originalURL,
 		UserID:      userID,
 		ExpiresAt:   expiresAtTimestamp,
 	})
-
 	if err != nil {
-		// Collision: ON CONFLICT DO NOTHING returned no rows.
-		// This is astronomically unlikely with SHA-256 + base62(7) → 3.5T combinations.
 		if errors.Is(err, sql.ErrNoRows) {
 			return db.TryCreateLinkRow{},
 				fmt.Errorf("collision after inserting code %s: %w", code, err)
 		}
-
-		return db.TryCreateLinkRow{},
-			fmt.Errorf("failed to create link: %w", err)
+		return db.TryCreateLinkRow{}, fmt.Errorf("failed to create link: %w", err)
 	}
 
 	return link, nil
@@ -416,6 +455,7 @@ func (s *LinkService) UpdateLink(
 	id uuid.UUID,
 	shortcode *string,
 	isActive *bool,
+	expiresAtSet bool,
 	expiresAt *time.Time,
 ) (db.UpdateLinkRow, error) {
 
@@ -445,11 +485,12 @@ func (s *LinkService) UpdateLink(
 	}
 
 	updatedLink, err := s.queries.UpdateLink(ctx, db.UpdateLinkParams{
-		UserID:    userID,
-		ID:        id,
-		Shortcode: shortcode,
-		IsActive:  isActive,
-		ExpiresAt: expiresAtTimestamp,
+		UserID:       userID,
+		ID:           id,
+		Shortcode:    shortcode,
+		IsActive:     isActive,
+		ExpiresAtSet: expiresAtSet,
+		ExpiresAt:    expiresAtTimestamp,
 	})
 
 	if err != nil {
@@ -503,7 +544,8 @@ func (s *LinkService) DeleteLink(ctx context.Context, userID string, id uuid.UUI
 // AddTagsToLink adds multiple tags to a link, ensuring both link and tags belong to the user
 // Returns the updated link with all tags
 func (s *LinkService) AddTagsToLink(ctx context.Context, userID string, linkID uuid.UUID, tagIDs []uuid.UUID) (db.GetLinkByIdAndUserWithTagsRow, error) {
-	if len(tagIDs) == 0 {
+	uniqueTagIDs := uniqueUUIDs(tagIDs)
+	if len(uniqueTagIDs) == 0 {
 		link, err := s.queries.GetLinkByIdAndUserWithTags(ctx, db.GetLinkByIdAndUserWithTagsParams{
 			ID:     linkID,
 			UserID: userID,
@@ -516,10 +558,16 @@ func (s *LinkService) AddTagsToLink(ctx context.Context, userID string, linkID u
 
 	var link db.GetLinkByIdAndUserWithTagsRow
 	if err := s.runInTx(ctx, func(qtx LinkQueries) error {
+		if err := s.validateOwnedLink(ctx, qtx, userID, linkID); err != nil {
+			return err
+		}
+		if err := s.validateOwnedTags(ctx, qtx, userID, uniqueTagIDs); err != nil {
+			return err
+		}
 		if err := qtx.AddTagsToLink(ctx, db.AddTagsToLinkParams{
 			LinkID: linkID,
 			UserID: userID,
-			TagIDs: tagIDs,
+			TagIDs: uniqueTagIDs,
 		}); err != nil {
 			return fmt.Errorf("failed to add tags to link: %w", err)
 		}
@@ -546,7 +594,8 @@ func (s *LinkService) AddTagsToLink(ctx context.Context, userID string, linkID u
 // RemoveTagsFromLink removes multiple tags from a link, ensuring both link and tags belong to the user
 // Returns the updated link with all tags
 func (s *LinkService) RemoveTagsFromLink(ctx context.Context, userID string, linkID uuid.UUID, tagIDs []uuid.UUID) (db.GetLinkByIdAndUserWithTagsRow, error) {
-	if len(tagIDs) == 0 {
+	uniqueTagIDs := uniqueUUIDs(tagIDs)
+	if len(uniqueTagIDs) == 0 {
 		link, err := s.queries.GetLinkByIdAndUserWithTags(ctx, db.GetLinkByIdAndUserWithTagsParams{
 			ID:     linkID,
 			UserID: userID,
@@ -559,10 +608,16 @@ func (s *LinkService) RemoveTagsFromLink(ctx context.Context, userID string, lin
 
 	var link db.GetLinkByIdAndUserWithTagsRow
 	if err := s.runInTx(ctx, func(qtx LinkQueries) error {
+		if err := s.validateOwnedLink(ctx, qtx, userID, linkID); err != nil {
+			return err
+		}
+		if err := s.validateOwnedTags(ctx, qtx, userID, uniqueTagIDs); err != nil {
+			return err
+		}
 		if err := qtx.RemoveTagsFromLink(ctx, db.RemoveTagsFromLinkParams{
 			LinkID: linkID,
 			UserID: userID,
-			TagIDs: tagIDs,
+			TagIDs: uniqueTagIDs,
 		}); err != nil {
 			return fmt.Errorf("failed to remove tags from link: %w", err)
 		}
@@ -586,12 +641,56 @@ func (s *LinkService) RemoveTagsFromLink(ctx context.Context, userID string, lin
 	return link, nil
 }
 
+func (s *LinkService) validateOwnedLink(ctx context.Context, queries LinkQueries, userID string, linkID uuid.UUID) error {
+	_, err := queries.GetLinkByIdAndUser(ctx, db.GetLinkByIdAndUserParams{
+		ID:     linkID,
+		UserID: userID,
+	})
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("%w: %v", apperrors.LinkNotFound, err)
+		}
+		return fmt.Errorf("failed to get link: %w", err)
+	}
+	return nil
+}
+
+func (s *LinkService) validateOwnedTags(ctx context.Context, queries LinkQueries, userID string, tagIDs []uuid.UUID) error {
+	ownedCount, err := queries.CountOwnedTags(ctx, db.CountOwnedTagsParams{
+		UserID: userID,
+		TagIDs: tagIDs,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to validate tags: %w", err)
+	}
+	if ownedCount != int64(len(tagIDs)) {
+		return fmt.Errorf("%w: one or more tags were not found", apperrors.TagNotFound)
+	}
+	return nil
+}
+
+func uniqueUUIDs(ids []uuid.UUID) []uuid.UUID {
+	if len(ids) == 0 {
+		return nil
+	}
+	seen := make(map[uuid.UUID]struct{}, len(ids))
+	unique := make([]uuid.UUID, 0, len(ids))
+	for _, id := range ids {
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		unique = append(unique, id)
+	}
+	return unique
+}
+
 type DashboardStats struct {
 	TotalLinks     int64                      `json:"total_links"`
 	ActiveLinks    int64                      `json:"active_links"`
 	TotalClicks    int                        `json:"total_clicks"`
 	ClicksOverTime []analytics.ClicksOverTime `json:"clicks_over_time,omitempty"`
-	RecentLinks    []db.GetRecentLinksRow     `json:"recent_links"`
+	RecentLinks    []dto.LinkResponse         `json:"recent_links"`
 }
 
 func (s *LinkService) GetDashboardStats(ctx context.Context, userID string) (*DashboardStats, error) {
@@ -624,7 +723,7 @@ func (s *LinkService) GetDashboardStats(ctx context.Context, userID string) (*Da
 	dashboard := &DashboardStats{
 		TotalLinks:  totalLinks,
 		ActiveLinks: activeLinks,
-		RecentLinks: recentLinks,
+		RecentLinks: dto.LinksFromRecentRows(recentLinks),
 	}
 
 	if s.analyticsClient != nil {

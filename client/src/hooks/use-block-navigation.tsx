@@ -5,7 +5,7 @@ import {
 	useRef,
 	useCallback,
 	useState,
-	ReactNode,
+	type ReactNode,
 } from "react";
 import {
 	AlertDialog,
@@ -261,7 +261,7 @@ export interface UseBlockNavigationOptions {
 // eslint-disable-next-line react-refresh/only-export-components
 export function useBlockNavigation(options: UseBlockNavigationOptions) {
 	const context = useContext(NavigationBlockerContext);
-	const blockerIdRef = useRef<string>(`blocker-${Math.random().toString(36).substr(2, 9)}`);
+	const blockerIdRef = useRef<string>(`blocker-${Math.random().toString(36).slice(2, 11)}`);
 
 	if (!context) {
 		throw new Error(

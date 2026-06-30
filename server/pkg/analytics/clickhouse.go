@@ -128,14 +128,12 @@ func New(ctx context.Context, cfg Config, log logger.Logger) (ClientInterface, e
 		ConnMaxLifetime: connMaxLifetime,
 	})
 	if err != nil {
-		return &Client{conn: nil, logger: log},
-			fmt.Errorf("failed to open ClickHouse connection: %w", err)
+		return &nopClient{logger: log}, fmt.Errorf("failed to open ClickHouse connection: %w", err)
 	}
 
 	if err := conn.Ping(ctx); err != nil {
 		conn.Close()
-		return &Client{conn: nil, logger: log},
-			fmt.Errorf("failed to ping ClickHouse: %w", err)
+		return &nopClient{logger: log}, fmt.Errorf("failed to ping ClickHouse: %w", err)
 	}
 
 	if err := conn.Exec(ctx, fmt.Sprintf(`
@@ -149,8 +147,7 @@ func New(ctx context.Context, cfg Config, log logger.Logger) (ClientInterface, e
 		ORDER BY (link_id, timestamp)
 	`, tableName)); err != nil {
 		conn.Close()
-		return &Client{conn: nil, logger: log},
-			fmt.Errorf("failed to create click_events table: %w", err)
+		return &nopClient{logger: log}, fmt.Errorf("failed to create click_events table: %w", err)
 	}
 
 	log.Info("ClickHouse connected successfully",

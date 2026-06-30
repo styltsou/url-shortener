@@ -82,7 +82,11 @@ export const apiClient = {
 		return apiFetch<T>(endpoint, { method: "GET" }, token);
 	},
 
-	async post<T>(endpoint: string, body: unknown, token: string | null): Promise<T> {
+	async post<T, Body extends object = object>(
+		endpoint: string,
+		body: Body,
+		token: string | null,
+	): Promise<T> {
 		return apiFetch<T>(
 			endpoint,
 			{
@@ -93,7 +97,11 @@ export const apiClient = {
 		);
 	},
 
-	async patch<T>(endpoint: string, body: unknown, token: string | null): Promise<T> {
+	async patch<T, Body extends object = object>(
+		endpoint: string,
+		body: Body,
+		token: string | null,
+	): Promise<T> {
 		return apiFetch<T>(
 			endpoint,
 			{

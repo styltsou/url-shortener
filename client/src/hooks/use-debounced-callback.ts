@@ -16,15 +16,14 @@ import { useRef } from "react";
  * <Input onChange={(e) => debouncedSearch(e.target.value)} />
  * ```
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function useDebouncedCallback<T extends (...args: any[]) => any>(
-	callback: T,
+export function useDebouncedCallback<Args extends unknown[]>(
+	callback: (...args: Args) => void,
 	delay: number = 300,
-): T {
+): (...args: Args) => void {
 	const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
 	// React Compiler automatically memoizes this function
-	const debouncedCallback = ((...args: Parameters<T>) => {
+	const debouncedCallback = (...args: Args) => {
 		if (timeoutRef.current) {
 			clearTimeout(timeoutRef.current);
 		}
@@ -32,7 +31,7 @@ export function useDebouncedCallback<T extends (...args: any[]) => any>(
 		timeoutRef.current = setTimeout(() => {
 			callback(...args);
 		}, delay);
-	}) as T;
+	};
 
 	return debouncedCallback;
 }

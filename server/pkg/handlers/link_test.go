@@ -24,17 +24,18 @@ import (
 
 // mockLinkService is a mock implementation of LinkServiceInterface
 type mockLinkService struct {
-	CreateShortLinkFunc    func(ctx context.Context, userID string, originalURL string, customShortcode *string, expiresAt *time.Time) (db.TryCreateLinkRow, error)
-	ListAllLinksFunc       func(ctx context.Context, userID string, isActive *bool, tagIDs []uuid.UUID, page, limit int) (*service.ListLinksResult, error)
-	GetLinkByShortcodeFunc func(ctx context.Context, userID string, shortcode string) (db.GetLinkByShortcodeAndUserRow, error)
-	GetOriginalURLFunc     func(ctx context.Context, code string) (db.GetLinkForRedirectRow, error)
-	UpdateLinkFunc         func(ctx context.Context, userID string, id uuid.UUID, shortcode *string, isActive *bool, expiresAt *time.Time) (db.UpdateLinkRow, error)
-	DeleteLinkFunc         func(ctx context.Context, userID string, id uuid.UUID) (db.DeleteLinkRow, error)
-	AddTagsToLinkFunc      func(ctx context.Context, userID string, linkID uuid.UUID, tagIDs []uuid.UUID) (db.GetLinkByIdAndUserWithTagsRow, error)
-	RemoveTagsFromLinkFunc func(ctx context.Context, userID string, linkID uuid.UUID, tagIDs []uuid.UUID) (db.GetLinkByIdAndUserWithTagsRow, error)
-	RecordClickFunc        func(ctx context.Context, linkID uuid.UUID, ip, userAgent, referrer string)
-	GetLinkAnalyticsFunc   func(ctx context.Context, userID string, shortcode string) (*analytics.LinkAnalytics, error)
-	GetDashboardStatsFunc  func(ctx context.Context, userID string) (*service.DashboardStats, error)
+	CreateShortLinkFunc         func(ctx context.Context, userID string, originalURL string, customShortcode *string, expiresAt *time.Time) (db.TryCreateLinkRow, error)
+	CreateShortLinkWithTagsFunc func(ctx context.Context, userID string, originalURL string, customShortcode *string, expiresAt *time.Time, tagIDs []uuid.UUID) (db.GetLinkByIdAndUserWithTagsRow, error)
+	ListAllLinksFunc            func(ctx context.Context, userID string, isActive *bool, tagIDs []uuid.UUID, page, limit int) (*service.ListLinksResult, error)
+	GetLinkByShortcodeFunc      func(ctx context.Context, userID string, shortcode string) (db.GetLinkByShortcodeAndUserRow, error)
+	GetOriginalURLFunc          func(ctx context.Context, code string) (db.GetLinkForRedirectRow, error)
+	UpdateLinkFunc              func(ctx context.Context, userID string, id uuid.UUID, shortcode *string, isActive *bool, expiresAtSet bool, expiresAt *time.Time) (db.UpdateLinkRow, error)
+	DeleteLinkFunc              func(ctx context.Context, userID string, id uuid.UUID) (db.DeleteLinkRow, error)
+	AddTagsToLinkFunc           func(ctx context.Context, userID string, linkID uuid.UUID, tagIDs []uuid.UUID) (db.GetLinkByIdAndUserWithTagsRow, error)
+	RemoveTagsFromLinkFunc      func(ctx context.Context, userID string, linkID uuid.UUID, tagIDs []uuid.UUID) (db.GetLinkByIdAndUserWithTagsRow, error)
+	RecordClickFunc             func(ctx context.Context, linkID uuid.UUID, ip, userAgent, referrer string)
+	GetLinkAnalyticsFunc        func(ctx context.Context, userID string, shortcode string) (*analytics.LinkAnalytics, error)
+	GetDashboardStatsFunc       func(ctx context.Context, userID string) (*service.DashboardStats, error)
 }
 
 func (m *mockLinkService) CreateShortLink(ctx context.Context, userID string, originalURL string, customShortcode *string, expiresAt *time.Time) (db.TryCreateLinkRow, error) {
@@ -42,6 +43,26 @@ func (m *mockLinkService) CreateShortLink(ctx context.Context, userID string, or
 		return m.CreateShortLinkFunc(ctx, userID, originalURL, customShortcode, expiresAt)
 	}
 	return db.TryCreateLinkRow{}, errors.New("not implemented")
+}
+
+func (m *mockLinkService) CreateShortLinkWithTags(ctx context.Context, userID string, originalURL string, customShortcode *string, expiresAt *time.Time, tagIDs []uuid.UUID) (db.GetLinkByIdAndUserWithTagsRow, error) {
+	if m.CreateShortLinkWithTagsFunc != nil {
+		return m.CreateShortLinkWithTagsFunc(ctx, userID, originalURL, customShortcode, expiresAt, tagIDs)
+	}
+	link, err := m.CreateShortLink(ctx, userID, originalURL, customShortcode, expiresAt)
+	if err != nil {
+		return db.GetLinkByIdAndUserWithTagsRow{}, err
+	}
+	return db.GetLinkByIdAndUserWithTagsRow{
+		ID:          link.ID,
+		Shortcode:   link.Shortcode,
+		OriginalUrl: link.OriginalUrl,
+		ExpiresAt:   link.ExpiresAt,
+		IsActive:    link.IsActive,
+		CreatedAt:   link.CreatedAt,
+		UpdatedAt:   link.UpdatedAt,
+		Tags:        []interface{}{},
+	}, nil
 }
 
 func (m *mockLinkService) ListAllLinks(ctx context.Context, userID string, isActive *bool, tagIDs []uuid.UUID, page, limit int) (*service.ListLinksResult, error) {
@@ -65,9 +86,9 @@ func (m *mockLinkService) GetOriginalURL(ctx context.Context, code string) (db.G
 	return db.GetLinkForRedirectRow{}, errors.New("not implemented")
 }
 
-func (m *mockLinkService) UpdateLink(ctx context.Context, userID string, id uuid.UUID, shortcode *string, isActive *bool, expiresAt *time.Time) (db.UpdateLinkRow, error) {
+func (m *mockLinkService) UpdateLink(ctx context.Context, userID string, id uuid.UUID, shortcode *string, isActive *bool, expiresAtSet bool, expiresAt *time.Time) (db.UpdateLinkRow, error) {
 	if m.UpdateLinkFunc != nil {
-		return m.UpdateLinkFunc(ctx, userID, id, shortcode, isActive, expiresAt)
+		return m.UpdateLinkFunc(ctx, userID, id, shortcode, isActive, expiresAtSet, expiresAt)
 	}
 	return db.UpdateLinkRow{}, errors.New("not implemented")
 }
@@ -430,7 +451,7 @@ func TestLinkHandler_UpdateLink(t *testing.T) {
 				Shortcode: &newShortcode,
 			},
 			mockService: &mockLinkService{
-				UpdateLinkFunc: func(ctx context.Context, userIDParam string, id uuid.UUID, shortcode *string, isActive *bool, expiresAt *time.Time) (db.UpdateLinkRow, error) {
+				UpdateLinkFunc: func(ctx context.Context, userIDParam string, id uuid.UUID, shortcode *string, isActive *bool, expiresAtSet bool, expiresAt *time.Time) (db.UpdateLinkRow, error) {
 					if id != linkID {
 						t.Errorf("UpdateLink called with wrong ID")
 					}
@@ -467,7 +488,7 @@ func TestLinkHandler_UpdateLink(t *testing.T) {
 				IsActive: &isActive,
 			},
 			mockService: &mockLinkService{
-				UpdateLinkFunc: func(ctx context.Context, userID string, id uuid.UUID, shortcode *string, isActive *bool, expiresAt *time.Time) (db.UpdateLinkRow, error) {
+				UpdateLinkFunc: func(ctx context.Context, userID string, id uuid.UUID, shortcode *string, isActive *bool, expiresAtSet bool, expiresAt *time.Time) (db.UpdateLinkRow, error) {
 					return db.UpdateLinkRow{
 						ID:          id,
 						Shortcode:   "oldcode",
@@ -517,7 +538,7 @@ func TestLinkHandler_UpdateLink(t *testing.T) {
 				Shortcode: &newShortcode,
 			},
 			mockService: &mockLinkService{
-				UpdateLinkFunc: func(ctx context.Context, userID string, id uuid.UUID, shortcode *string, isActive *bool, expiresAt *time.Time) (db.UpdateLinkRow, error) {
+				UpdateLinkFunc: func(ctx context.Context, userID string, id uuid.UUID, shortcode *string, isActive *bool, expiresAtSet bool, expiresAt *time.Time) (db.UpdateLinkRow, error) {
 					return db.UpdateLinkRow{}, apperrors.LinkNotFound
 				},
 			},
@@ -540,7 +561,7 @@ func TestLinkHandler_UpdateLink(t *testing.T) {
 				Shortcode: &newShortcode,
 			},
 			mockService: &mockLinkService{
-				UpdateLinkFunc: func(ctx context.Context, userID string, id uuid.UUID, shortcode *string, isActive *bool, expiresAt *time.Time) (db.UpdateLinkRow, error) {
+				UpdateLinkFunc: func(ctx context.Context, userID string, id uuid.UUID, shortcode *string, isActive *bool, expiresAtSet bool, expiresAt *time.Time) (db.UpdateLinkRow, error) {
 					return db.UpdateLinkRow{}, apperrors.LinkShortcodeTaken
 				},
 			},
@@ -563,7 +584,7 @@ func TestLinkHandler_UpdateLink(t *testing.T) {
 				Shortcode: &newShortcode,
 			},
 			mockService: &mockLinkService{
-				UpdateLinkFunc: func(ctx context.Context, userID string, id uuid.UUID, shortcode *string, isActive *bool, expiresAt *time.Time) (db.UpdateLinkRow, error) {
+				UpdateLinkFunc: func(ctx context.Context, userID string, id uuid.UUID, shortcode *string, isActive *bool, expiresAtSet bool, expiresAt *time.Time) (db.UpdateLinkRow, error) {
 					return db.UpdateLinkRow{}, errors.New("database error")
 				},
 			},

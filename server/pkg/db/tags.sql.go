@@ -12,6 +12,23 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countOwnedTags = `-- name: CountOwnedTags :one
+SELECT COUNT(DISTINCT id) FROM tags
+WHERE user_id = $1 AND id = ANY($2::uuid[])
+`
+
+type CountOwnedTagsParams struct {
+	UserID string      `json:"user_id"`
+	TagIDs []uuid.UUID `json:"tag_i_ds"`
+}
+
+func (q *Queries) CountOwnedTags(ctx context.Context, arg CountOwnedTagsParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countOwnedTags, arg.UserID, arg.TagIDs)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createTag = `-- name: CreateTag :one
 INSERT INTO tags (name, user_id)
 VALUES ($1, $2)

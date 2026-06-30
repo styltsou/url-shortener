@@ -83,6 +83,36 @@ GROUP BY l.id;
 
 
 -- name: ListUserLinks :many
+WITH filtered_links AS (
+    SELECT l.*
+    FROM links l
+    WHERE l.user_id = $1
+      AND l.deleted_at IS NULL
+      AND (
+        sqlc.narg('is_active')::boolean IS NULL
+        OR (
+          sqlc.narg('is_active')::boolean = true
+          AND COALESCE(l.is_active, true) = true
+          AND (l.expires_at IS NULL OR l.expires_at > NOW())
+        )
+        OR (
+          sqlc.narg('is_active')::boolean = false
+          AND (
+            COALESCE(l.is_active, true) = false
+            OR (l.expires_at IS NOT NULL AND l.expires_at <= NOW())
+          )
+        )
+      )
+      AND (
+        sqlc.narg('tag_ids')::uuid[] IS NULL
+        OR EXISTS (
+          SELECT 1
+          FROM link_tags filter_lt
+          WHERE filter_lt.link_id = l.id
+            AND filter_lt.tag_id = ANY(sqlc.narg('tag_ids')::uuid[])
+        )
+      )
+)
 SELECT 
     l.id,
     l.shortcode,
@@ -101,69 +131,46 @@ SELECT
         ) FILTER (WHERE t.id IS NOT NULL),
         '[]'::json
     ) as tags
-FROM links l
+FROM filtered_links l
 LEFT JOIN link_tags lt ON l.id = lt.link_id
 LEFT JOIN tags t ON lt.tag_id = t.id
-WHERE l.user_id = $1 
-  AND l.deleted_at IS NULL
-  AND (
-    -- If is_active filter is NULL, show all links
-    sqlc.narg('is_active')::boolean IS NULL
-    OR (
-      -- Active filter: is_active = true AND (no expiration OR not expired)
-      sqlc.narg('is_active')::boolean = true
-      AND COALESCE(l.is_active, true) = true
-      AND (l.expires_at IS NULL OR l.expires_at > NOW())
-    )
-    OR (
-      -- Inactive filter: is_active = false OR expired
-      sqlc.narg('is_active')::boolean = false
-      AND (
-        COALESCE(l.is_active, true) = false
-        OR (l.expires_at IS NOT NULL AND l.expires_at <= NOW())
-      )
-    )
-  )
-GROUP BY l.id
-HAVING (
-    sqlc.narg('tag_ids')::uuid[] IS NULL 
-    OR COUNT(CASE WHEN t.id = ANY(sqlc.narg('tag_ids')::uuid[]) THEN 1 END) > 0
-)
+GROUP BY l.id, l.shortcode, l.original_url, l.expires_at, l.is_active, l.created_at, l.updated_at
 ORDER BY l.created_at DESC
 LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
 
 
 -- name: CountUserLinks :one
-SELECT COUNT(DISTINCT l.id) as total
-FROM links l
-WHERE l.user_id = $1 
-  AND l.deleted_at IS NULL
-  AND (
-    -- If is_active filter is NULL, show all links
-    sqlc.narg('is_active')::boolean IS NULL
-    OR (
-      -- Active filter: is_active = true AND (no expiration OR not expired)
-      sqlc.narg('is_active')::boolean = true
-      AND COALESCE(l.is_active, true) = true
-      AND (l.expires_at IS NULL OR l.expires_at > NOW())
-    )
-    OR (
-      -- Inactive filter: is_active = false OR expired
-      sqlc.narg('is_active')::boolean = false
+WITH filtered_links AS (
+    SELECT l.id
+    FROM links l
+    WHERE l.user_id = $1
+      AND l.deleted_at IS NULL
       AND (
-        COALESCE(l.is_active, true) = false
-        OR (l.expires_at IS NOT NULL AND l.expires_at <= NOW())
+        sqlc.narg('is_active')::boolean IS NULL
+        OR (
+          sqlc.narg('is_active')::boolean = true
+          AND COALESCE(l.is_active, true) = true
+          AND (l.expires_at IS NULL OR l.expires_at > NOW())
+        )
+        OR (
+          sqlc.narg('is_active')::boolean = false
+          AND (
+            COALESCE(l.is_active, true) = false
+            OR (l.expires_at IS NOT NULL AND l.expires_at <= NOW())
+          )
+        )
       )
-    )
-  )
-  AND (
-    sqlc.narg('tag_ids')::uuid[] IS NULL 
-    OR l.id IN (
-      SELECT DISTINCT lt.link_id
-      FROM link_tags lt
-      WHERE lt.tag_id = ANY(sqlc.narg('tag_ids')::uuid[])
-    )
-  );
+      AND (
+        sqlc.narg('tag_ids')::uuid[] IS NULL
+        OR EXISTS (
+          SELECT 1
+          FROM link_tags filter_lt
+          WHERE filter_lt.link_id = l.id
+            AND filter_lt.tag_id = ANY(sqlc.narg('tag_ids')::uuid[])
+        )
+      )
+)
+SELECT COUNT(*) as total FROM filtered_links;
 
 
 -- name: UpdateLink :one
@@ -171,7 +178,10 @@ UPDATE links
 SET 
     shortcode = COALESCE(sqlc.narg('shortcode'), shortcode),
     is_active = COALESCE(sqlc.narg('is_active'), is_active),
-    expires_at = COALESCE(sqlc.narg('expires_at'), expires_at),
+    expires_at = CASE
+        WHEN sqlc.arg('expires_at_set')::boolean THEN sqlc.narg('expires_at')
+        ELSE expires_at
+    END,
     updated_at = NOW()
 WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL
 RETURNING id, shortcode, original_url, is_active, expires_at, created_at, updated_at;
