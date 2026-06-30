@@ -55,8 +55,11 @@ Our backend follows a **layered architecture** with clear separation of concerns
    - Applies middleware chain:
      * CORS
      * RequestID
+     * RequestIDHeader
+     * SecurityHeaders
      * RequestLogger
      * Recoverer
+     * RateLimit
      * RequireAuth (extracts user ID)
 
 3. Handler (pkg/handlers/link.go)
@@ -185,10 +188,20 @@ Middleware executes in this order (top to bottom):
 
 1. **CORS** - Handles cross-origin requests
 2. **RequestID** - Adds unique request ID
-3. **RequestLogger** - Logs request/response
-4. **Recoverer** - Catches panics
-5. **RequireAuth** - Validates authentication (on protected routes)
-6. **Routes** - Handler execution (handlers handle errors directly)
+3. **RequestIDHeader** - Returns `X-Request-ID` to clients
+4. **SecurityHeaders** - Adds basic browser hardening headers
+5. **RequestLogger** - Logs request/response; production logs include request ID, status, latency, and user agent
+6. **Recoverer** - Catches panics
+7. **RateLimit** - Applies fixed-window per-client-IP rate limiting
+8. **RequireAuth** - Validates authentication (on protected routes)
+9. **Routes** - Handler execution (handlers handle errors directly)
+
+Rate limiting is configured with `RATE_LIMIT_REQUESTS` and `RATE_LIMIT_WINDOW_SECONDS`. Set `RATE_LIMIT_REQUESTS=0` to disable it for local debugging.
+
+Health checks:
+
+- `GET /api/v1/health` and `GET /api/v1/health/live` are liveness checks for process availability.
+- `GET /api/v1/health/ready` checks required dependencies. Postgres failure returns `503`; Redis failure is reported as degraded because the service can run without cache.
 
 ## Data Flow
 
@@ -367,4 +380,3 @@ The interface-based design makes these changes easier.
 - `PROJECT_STRUCTURE.md` - Directory structure details
 - `SERVICE_PATTERNS.md` - How to create services
 - `HANDLER_PATTERNS.md` - How to create handlers
-

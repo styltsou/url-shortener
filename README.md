@@ -16,6 +16,7 @@ A production-grade URL shortener with analytics, tags, and QR code generation. B
 - QR code generation per link
 - Redis caching for fast redirects
 - Clerk authentication (Google/GitHub OAuth)
+- Request IDs, structured production logging, security headers, rate limiting, health checks
 - Dark/light mode, responsive UI
 
 ## Quick Start
@@ -50,12 +51,19 @@ See [docs/WELCOME.md](docs/WELCOME.md) for a full developer onboarding guide.
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/{shortcode}` | Redirect |
+| `GET` | `/api/v1/health/live` | Liveness check |
+| `GET` | `/api/v1/health/ready` | Dependency readiness check |
 | `POST` | `/api/v1/links` | Create link |
 | `GET` | `/api/v1/links` | List links |
 | `GET` | `/api/v1/links/{shortcode}/analytics` | Analytics |
 | `GET` | `/api/v1/links/{shortcode}/qrcode` | QR code |
 
 Full API reference at http://localhost:8080/api/v1/reference
+
+Operational headers:
+
+- `X-Request-ID` is returned on every response and included in production logs.
+- `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`, and `Retry-After` describe rate-limit state.
 
 ## Development
 

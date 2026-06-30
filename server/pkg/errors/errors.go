@@ -20,6 +20,7 @@ const (
 	CodeCodeTaken    ErrorCode = "code_taken"
 	CodeTagNotFound  ErrorCode = "tag_not_found"
 	CodeTagNameTaken ErrorCode = "tag_name_taken"
+	CodeRateLimited  ErrorCode = "rate_limit_exceeded"
 
 	CodeForbidden        ErrorCode = "forbidden"
 	CodeNotFound         ErrorCode = "not_found"

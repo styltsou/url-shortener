@@ -29,6 +29,8 @@
    PORT=8080
    POSTGRES_CONNECTION_STRING=postgres://user:password@localhost:5432/urlshortener?sslmode=disable
    CLERK_SECRET_KEY=sk_test_...
+   RATE_LIMIT_REQUESTS=120
+   RATE_LIMIT_WINDOW_SECONDS=60
    ```
 
 3. **Set up database**
@@ -73,6 +75,22 @@
    ```bash
    go test ./...
    ```
+
+### Operational Endpoints
+
+- `GET /api/v1/health` and `GET /api/v1/health/live` return liveness status.
+- `GET /api/v1/health/ready` checks Postgres and Redis. Postgres is required; Redis can be degraded.
+
+### HTTP Hardening
+
+The backend returns `X-Request-ID` on every response, emits structured request logs in production, adds basic security headers, and applies in-process per-client-IP rate limiting. Tune rate limiting with:
+
+```env
+RATE_LIMIT_REQUESTS=120
+RATE_LIMIT_WINDOW_SECONDS=60
+```
+
+Set `RATE_LIMIT_REQUESTS=0` to disable rate limiting locally.
 
 4. **Check for issues**
    ```bash
@@ -443,4 +461,3 @@ Recommended extensions:
 
 - `ARCHITECTURE.md` - Overall architecture
 - `PROJECT_STRUCTURE.md` - Directory structure
-

@@ -98,6 +98,20 @@ components:
           type: string
           format: uri
           description: The URL to shorten
+        shortcode:
+          type: string
+          description: Optional custom shortcode
+        expires_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Optional expiration date
+        tag_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+          description: Optional initial tags to attach atomically during link creation
     UpdateLinkRequest:
       type: object
       properties:
@@ -283,6 +297,7 @@ components:
           - code_taken
           - tag_not_found
           - tag_name_taken
+          - rate_limit_exceeded
           - internal_server_error
           description: Machine-readable error code
         title:
@@ -294,6 +309,31 @@ components:
       required:
       - code
       - title
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum:
+          - ok
+          - unavailable
+        service:
+          type: string
+          example: URL Shortener API
+        checks:
+          type: object
+          additionalProperties:
+            type: string
+          description: Dependency status map, included on readiness checks
+          example:
+            postgres: ok
+            redis: degraded
+        degraded:
+          type: boolean
+          description: True when optional dependencies are unavailable
+      required:
+      - status
+      - service
 paths:
   /{code}:
     get:
@@ -314,6 +354,22 @@ paths:
         '302':
           description: Redirect to the original URL
           headers:
+            X-Request-ID:
+              schema:
+                type: string
+              description: Request correlation ID
+            X-RateLimit-Limit:
+              schema:
+                type: string
+              description: Requests allowed in the current window
+            X-RateLimit-Remaining:
+              schema:
+                type: string
+              description: Requests remaining in the current window
+            X-RateLimit-Reset:
+              schema:
+                type: string
+              description: Unix timestamp when the current rate-limit window resets
             Location:
               schema:
                 type: string
@@ -331,7 +387,7 @@ paths:
       tags:
       - Public
       summary: Health check
-      description: Returns the health status of the API service
+      description: Liveness check for the API process
       operationId: healthCheck
       responses:
         '200':
@@ -339,17 +395,41 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  status:
-                    type: string
-                    example: ok
-                  service:
-                    type: string
-                    example: URL Shortener API
-                required:
-                - status
-                - service
+                $ref: '#/components/schemas/HealthResponse'
+  /api/v1/health/live:
+    get:
+      tags:
+      - Public
+      summary: Liveness check
+      description: Returns whether the API process is running
+      operationId: healthLive
+      responses:
+        '200':
+          description: API process is live
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+  /api/v1/health/ready:
+    get:
+      tags:
+      - Public
+      summary: Readiness check
+      description: Checks required dependencies. Postgres failure returns 503; Redis failure is reported as degraded.
+      operationId: healthReady
+      responses:
+        '200':
+          description: Service is ready
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+        '503':
+          description: Required dependency is unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
   /api/v1/reference:
     get:
       tags:

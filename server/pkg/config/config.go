@@ -42,6 +42,8 @@ type Config struct {
 	ServerReadTimeout        int      `mapstructure:"SERVER_READ_TIMEOUT" validate:"min=1"`
 	ServerWriteTimeout       int      `mapstructure:"SERVER_WRITE_TIMEOUT" validate:"min=1"`
 	ServerIdleTimeout        int      `mapstructure:"SERVER_IDLE_TIMEOUT" validate:"min=1"`
+	RateLimitRequests        int      `mapstructure:"RATE_LIMIT_REQUESTS" validate:"omitempty,min=0"`
+	RateLimitWindowSeconds   int      `mapstructure:"RATE_LIMIT_WINDOW_SECONDS" validate:"omitempty,min=1"`
 }
 
 var cfg *Config
@@ -116,12 +118,14 @@ func Load() (*Config, error) {
 	v.SetDefault("CORS_ALLOWED_ORIGINS", "http://localhost:5173,http://localhost:3000")
 	v.SetDefault("CORS_ALLOWED_METHODS", "GET,POST,PUT,PATCH,DELETE,OPTIONS")
 	v.SetDefault("CORS_ALLOWED_HEADERS", "Accept,Authorization,Content-Type,X-CSRF-Token")
-	v.SetDefault("CORS_EXPOSED_HEADERS", "Link")
+	v.SetDefault("CORS_EXPOSED_HEADERS", "Link,X-Request-ID,X-RateLimit-Limit,X-RateLimit-Remaining,X-RateLimit-Reset,Retry-After")
 	v.SetDefault("CORS_ALLOW_CREDENTIALS", true)
 	v.SetDefault("CORS_MAX_AGE", 300)
 	v.SetDefault("SERVER_READ_TIMEOUT", 15)
 	v.SetDefault("SERVER_WRITE_TIMEOUT", 15)
 	v.SetDefault("SERVER_IDLE_TIMEOUT", 60)
+	v.SetDefault("RATE_LIMIT_REQUESTS", 120)
+	v.SetDefault("RATE_LIMIT_WINDOW_SECONDS", 60)
 
 	v.SetDefault("REDIS_DB", 0)
 	v.SetDefault("REDIS_DIAL_TIMEOUT", 5)

@@ -57,12 +57,12 @@ func sanitizeDSN(dsn string) string {
 
 // Server encapsulates the HTTP server, router, database pool, and context
 type Server struct {
-	Context          context.Context
-	Pool             *pgxpool.Pool
-	RedisClient      *redis.Client
-	AnalyticsClient  analytics.ClientInterface
-	Router           *chi.Mux
-	Logger           logger.Logger
+	Context         context.Context
+	Pool            *pgxpool.Pool
+	RedisClient     *redis.Client
+	AnalyticsClient analytics.ClientInterface
+	Router          *chi.Mux
+	Logger          logger.Logger
 }
 
 // New creates and initializes a new Server instance
@@ -150,10 +150,17 @@ func New(config *config.Config, log logger.Logger) (*Server, error) {
 		MaxAge:           config.CORSMaxAge,
 	}))
 	s.Router.Use(chimw.RequestID)
+	s.Router.Use(middleware.RequestIDHeader)
+	s.Router.Use(middleware.SecurityHeaders)
 	s.Router.Use(middleware.RequestLogger(s.Logger))
 	s.Router.Use(chimw.Recoverer)
+	s.Router.Use(middleware.RateLimit(middleware.RateLimitConfig{
+		Requests: config.RateLimitRequests,
+		Window:   time.Duration(config.RateLimitWindowSeconds) * time.Second,
+	}))
 
-	apiRouter := router.New(linkHandler, tagHandler, s.Logger)
+	healthHandler := handlers.NewHealthHandler(s.Pool, s.RedisClient, s.Logger)
+	apiRouter := router.New(linkHandler, tagHandler, healthHandler, s.Logger)
 	s.Router.Mount("/", apiRouter)
 
 	return s, nil

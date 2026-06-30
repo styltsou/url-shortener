@@ -15,7 +15,7 @@ import (
 	"go.uber.org/zap"
 )
 
-func New(linkH *handlers.LinkHandler, tagH *handlers.TagHandler, logger logger.Logger) *chi.Mux {
+func New(linkH *handlers.LinkHandler, tagH *handlers.TagHandler, healthH *handlers.HealthHandler, logger logger.Logger) *chi.Mux {
 	r := chi.NewRouter()
 
 	// Set custom NotFound handler
@@ -26,13 +26,9 @@ func New(linkH *handlers.LinkHandler, tagH *handlers.TagHandler, logger logger.L
 
 	r.Get("/{code}", linkH.Redirect)
 
-	r.Get("/api/v1/health", func(w http.ResponseWriter, r *http.Request) {
-		render.Status(r, http.StatusOK)
-		render.JSON(w, r, map[string]string{
-			"status":  "ok",
-			"service": "URL Shortener API",
-		})
-	})
+	r.Get("/api/v1/health", healthH.Live)
+	r.Get("/api/v1/health/live", healthH.Live)
+	r.Get("/api/v1/health/ready", healthH.Ready)
 
 	r.Get("/api/v1/reference", func(w http.ResponseWriter, r *http.Request) {
 		htmlContent, err := scalar.ApiReferenceHTML(&scalar.Options{
