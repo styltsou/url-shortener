@@ -1,5 +1,7 @@
 package handlers
 
+//nolint:goconst // test fixtures, not worth extracting
+
 import (
 	"bytes"
 	"context"
@@ -140,18 +142,6 @@ func createTestLogger() logger.Logger {
 		panic("failed to create test logger: " + err.Error())
 	}
 	return log
-}
-
-func createTestLink(id uuid.UUID, shortcode, originalURL, userID string) db.Link {
-	return db.Link{
-		ID:          id,
-		Shortcode:   shortcode,
-		OriginalUrl: originalURL,
-		UserID:      userID,
-		ExpiresAt:   pgtype.Timestamp{Valid: false},
-		CreatedAt:   pgtype.Timestamp{Valid: false},
-		UpdatedAt:   pgtype.Timestamp{Valid: false},
-	}
 }
 
 func TestLinkHandler_CreateLink(t *testing.T) {
@@ -635,7 +625,7 @@ func TestLinkHandler_UpdateLink(t *testing.T) {
 
 func TestLinkHandler_GetLink(t *testing.T) {
 	userID := "user_123"
-	shortcode := "abc123"
+	shortcode := "abc123" //nolint:goconst
 	linkID := uuid.New()
 
 	tests := []struct {
@@ -1215,6 +1205,259 @@ func TestLinkHandler_Redirect(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestLinkHandler_GetQRCode(t *testing.T) {
+	shortcode := "abc123"
+
+	t.Run("successful QR code generation", func(t *testing.T) {
+		handler := &LinkHandler{
+			LinkService: &mockLinkService{},
+			baseURL:     "http://localhost:8080",
+			logger:      createTestLogger(),
+		}
+
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/links/"+shortcode+"/qrcode", nil)
+		w := httptest.NewRecorder()
+
+		r := chi.NewRouter()
+		r.Get("/api/v1/links/{shortcode}/qrcode", handler.GetQRCode)
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Errorf("GetQRCode() status = %d, want %d", w.Code, http.StatusOK)
+		}
+		contentType := w.Header().Get("Content-Type")
+		if contentType != "image/png" {
+			t.Errorf("GetQRCode() Content-Type = %s, want image/png", contentType)
+		}
+		if w.Body.Len() == 0 {
+			t.Errorf("GetQRCode() returned empty body")
+		}
+	})
+
+	t.Run("uses custom size parameter", func(t *testing.T) {
+		handler := &LinkHandler{
+			LinkService: &mockLinkService{},
+			baseURL:     "http://localhost:8080",
+			logger:      createTestLogger(),
+		}
+
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/links/"+shortcode+"/qrcode?size=512", nil)
+		w := httptest.NewRecorder()
+
+		r := chi.NewRouter()
+		r.Get("/api/v1/links/{shortcode}/qrcode", handler.GetQRCode)
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Errorf("GetQRCode() with size=512 status = %d, want %d", w.Code, http.StatusOK)
+		}
+	})
+
+	t.Run("clamps size to valid range (below 64)", func(t *testing.T) {
+		handler := &LinkHandler{
+			LinkService: &mockLinkService{},
+			baseURL:     "http://localhost:8080",
+			logger:      createTestLogger(),
+		}
+
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/links/"+shortcode+"/qrcode?size=32", nil)
+		w := httptest.NewRecorder()
+
+		r := chi.NewRouter()
+		r.Get("/api/v1/links/{shortcode}/qrcode", handler.GetQRCode)
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Errorf("GetQRCode() with invalid size status = %d, want %d", w.Code, http.StatusOK)
+		}
+	})
+
+	t.Run("clamps size to valid range (above 1024)", func(t *testing.T) {
+		handler := &LinkHandler{
+			LinkService: &mockLinkService{},
+			baseURL:     "http://localhost:8080",
+			logger:      createTestLogger(),
+		}
+
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/links/"+shortcode+"/qrcode?size=2048", nil)
+		w := httptest.NewRecorder()
+
+		r := chi.NewRouter()
+		r.Get("/api/v1/links/{shortcode}/qrcode", handler.GetQRCode)
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Errorf("GetQRCode() with oversized size status = %d, want %d", w.Code, http.StatusOK)
+		}
+	})
+}
+
+func TestLinkHandler_GetDashboard(t *testing.T) {
+	userID := "user_123"
+
+	t.Run("successful dashboard", func(t *testing.T) {
+		handler := &LinkHandler{
+			LinkService: &mockLinkService{
+				GetDashboardStatsFunc: func(ctx context.Context, uid string) (*service.DashboardStats, error) {
+					if uid != userID {
+						t.Errorf("GetDashboardStats called with wrong userID: got %s, want %s", uid, userID)
+					}
+					return &service.DashboardStats{
+						TotalLinks:  10,
+						ActiveLinks: 5,
+						TotalClicks: 100,
+						RecentLinks: []dto.LinkResponse{},
+					}, nil
+				},
+			},
+			logger: createTestLogger(),
+		}
+
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard", nil)
+		ctx := middleware.WithUserID(req.Context(), userID)
+		req = req.WithContext(ctx)
+		w := httptest.NewRecorder()
+
+		handler.GetDashboard(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Errorf("GetDashboard() status = %d, want %d", w.Code, http.StatusOK)
+		}
+
+		var response dto.SuccessResponse[*service.DashboardStats]
+		if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+			t.Fatalf("Failed to unmarshal response: %v", err)
+		}
+		if response.Data.TotalLinks != 10 {
+			t.Errorf("Response Data.TotalLinks = %d, want 10", response.Data.TotalLinks)
+		}
+		if response.Data.ActiveLinks != 5 {
+			t.Errorf("Response Data.ActiveLinks = %d, want 5", response.Data.ActiveLinks)
+		}
+		if response.Data.TotalClicks != 100 {
+			t.Errorf("Response Data.TotalClicks = %d, want 100", response.Data.TotalClicks)
+		}
+	})
+
+	t.Run("service error", func(t *testing.T) {
+		handler := &LinkHandler{
+			LinkService: &mockLinkService{
+				GetDashboardStatsFunc: func(ctx context.Context, uid string) (*service.DashboardStats, error) {
+					return nil, errors.New("database error")
+				},
+			},
+			logger: createTestLogger(),
+		}
+
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard", nil)
+		ctx := middleware.WithUserID(req.Context(), userID)
+		req = req.WithContext(ctx)
+		w := httptest.NewRecorder()
+
+		handler.GetDashboard(w, req)
+
+		if w.Code != http.StatusInternalServerError {
+			t.Errorf("GetDashboard() status = %d, want %d", w.Code, http.StatusInternalServerError)
+		}
+	})
+}
+
+func TestLinkHandler_GetLinkAnalytics(t *testing.T) {
+	userID := "user_123"
+	shortcode := "abc123"
+
+	t.Run("successful analytics", func(t *testing.T) {
+		handler := &LinkHandler{
+			LinkService: &mockLinkService{
+				GetLinkAnalyticsFunc: func(ctx context.Context, uid string, code string) (*analytics.LinkAnalytics, error) {
+					if uid != userID {
+						t.Errorf("GetLinkAnalytics called with wrong userID: got %s, want %s", uid, userID)
+					}
+					if code != shortcode {
+						t.Errorf("GetLinkAnalytics called with wrong shortcode: got %s, want %s", code, shortcode)
+					}
+					return &analytics.LinkAnalytics{
+						TotalClicks:    42,
+						ClicksOverTime: []analytics.ClicksOverTime{},
+						TopReferrers:   []analytics.ReferrerStat{},
+						TopUserAgents:  []analytics.UserAgentStat{},
+					}, nil
+				},
+			},
+			logger: createTestLogger(),
+		}
+
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/links/"+shortcode+"/analytics", nil)
+		ctx := middleware.WithUserID(req.Context(), userID)
+		req = req.WithContext(ctx)
+		w := httptest.NewRecorder()
+
+		r := chi.NewRouter()
+		r.Get("/api/v1/links/{shortcode}/analytics", handler.GetLinkAnalytics)
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Errorf("GetLinkAnalytics() status = %d, want %d", w.Code, http.StatusOK)
+		}
+
+		var response dto.SuccessResponse[*analytics.LinkAnalytics]
+		if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+			t.Fatalf("Failed to unmarshal response: %v", err)
+		}
+		if response.Data.TotalClicks != 42 {
+			t.Errorf("Response Data.TotalClicks = %d, want 42", response.Data.TotalClicks)
+		}
+	})
+
+	t.Run("link not found", func(t *testing.T) {
+		handler := &LinkHandler{
+			LinkService: &mockLinkService{
+				GetLinkAnalyticsFunc: func(ctx context.Context, uid string, code string) (*analytics.LinkAnalytics, error) {
+					return nil, apperrors.LinkNotFound
+				},
+			},
+			logger: createTestLogger(),
+		}
+
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/links/"+shortcode+"/analytics", nil)
+		ctx := middleware.WithUserID(req.Context(), userID)
+		req = req.WithContext(ctx)
+		w := httptest.NewRecorder()
+
+		r := chi.NewRouter()
+		r.Get("/api/v1/links/{shortcode}/analytics", handler.GetLinkAnalytics)
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusNotFound {
+			t.Errorf("GetLinkAnalytics() status = %d, want %d", w.Code, http.StatusNotFound)
+		}
+	})
+
+	t.Run("service error", func(t *testing.T) {
+		handler := &LinkHandler{
+			LinkService: &mockLinkService{
+				GetLinkAnalyticsFunc: func(ctx context.Context, uid string, code string) (*analytics.LinkAnalytics, error) {
+					return nil, errors.New("analytics service error")
+				},
+			},
+			logger: createTestLogger(),
+		}
+
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/links/"+shortcode+"/analytics", nil)
+		ctx := middleware.WithUserID(req.Context(), userID)
+		req = req.WithContext(ctx)
+		w := httptest.NewRecorder()
+
+		r := chi.NewRouter()
+		r.Get("/api/v1/links/{shortcode}/analytics", handler.GetLinkAnalytics)
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusInternalServerError {
+			t.Errorf("GetLinkAnalytics() status = %d, want %d", w.Code, http.StatusInternalServerError)
+		}
+	})
 }
 
 // Note: Error mapping is now tested in pkg/errors/errors_test.go via TestMapError

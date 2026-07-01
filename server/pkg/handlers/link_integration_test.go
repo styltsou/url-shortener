@@ -1,5 +1,7 @@
 package handlers
 
+//nolint:goconst // test fixtures, not worth extracting
+
 import (
 	"bytes"
 	"context"
@@ -18,7 +20,7 @@ import (
 )
 
 func TestLinkHTTPIntegrationCreateWithTags(t *testing.T) {
-	userID := "user_123"
+	userID := "user_123" //nolint:goconst
 	tagID := uuid.New()
 	linkID := uuid.New()
 
@@ -27,7 +29,7 @@ func TestLinkHTTPIntegrationCreateWithTags(t *testing.T) {
 			if gotUserID != userID {
 				t.Fatalf("userID = %q, want %q", gotUserID, userID)
 			}
-			if originalURL != "https://example.com" {
+			if originalURL != "https://example.com" { //nolint:goconst
 				t.Fatalf("originalURL = %q, want https://example.com", originalURL)
 			}
 			if customShortcode == nil || *customShortcode != "demo" {

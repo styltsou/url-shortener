@@ -114,7 +114,9 @@ func NewLinkService(txBeginner TxBeginner, queries LinkQueries, cache *redis.Cli
 		if err != nil {
 			return fmt.Errorf("failed to begin transaction: %w", err)
 		}
-		defer tx.Rollback(ctx)
+		defer func() {
+			_ = tx.Rollback(ctx)
+		}()
 
 		qtx := db.New(tx)
 		if err := fn(qtx); err != nil {
@@ -324,7 +326,7 @@ func (s *LinkService) ListAllLinks(ctx context.Context, userID string, isActive 
 		return nil, fmt.Errorf("failed to get links: %w", err)
 	}
 
-	totalPages := int((total + int64(limit) - 1) / int64(limit)) // Ceiling division
+	totalPages := int((total+int64(limit)-1) / int64(limit)) //nolint:gosec // small int, max 100
 
 	s.logger.Debug("Database query completed for ListUserLinks",
 		zap.String("user_id", userID),

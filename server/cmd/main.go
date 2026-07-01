@@ -29,23 +29,25 @@ func main() {
 		os.Exit(1)
 	}
 
+	srv, err := server.New(cfg, log)
+	if err != nil {
+		log.Error("Failed to initialize server",
+			zap.Error(err),
+		)
+		_ = log.Sync()
+		os.Exit(1)
+	}
+
 	defer func() {
 		_ = log.Sync() // Flush logs on exit
 	}()
 
-	srv, err := server.New(cfg, log)
-	if err != nil {
-		log.Fatal("Failed to initialize server",
-			zap.Error(err),
-		)
-	}
-
 	httpServer := &http.Server{
 		Addr:         ":" + strconv.Itoa(cfg.Port),
 		Handler:      srv.Router,
-		ReadTimeout:  time.Duration(cfg.ServerReadTimeout) * time.Second,
-		WriteTimeout: time.Duration(cfg.ServerWriteTimeout) * time.Second,
-		IdleTimeout:  time.Duration(cfg.ServerIdleTimeout) * time.Second,
+		ReadTimeout:  time.Duration(cfg.ServerReadTimeout) * time.Second,  //nolint:gosec
+		WriteTimeout: time.Duration(cfg.ServerWriteTimeout) * time.Second, //nolint:gosec
+		IdleTimeout:  time.Duration(cfg.ServerIdleTimeout) * time.Second, //nolint:gosec
 	}
 
 	go func() {

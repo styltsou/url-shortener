@@ -12,6 +12,8 @@ import (
 	"go.uber.org/zap"
 )
 
+const healthUnavailable = "unavailable"
+
 type HealthHandler struct {
 	pool   *pgxpool.Pool
 	redis  *redis.Client
@@ -51,13 +53,13 @@ func (h *HealthHandler) Ready(w http.ResponseWriter, r *http.Request) {
 	degraded := false
 
 	if h.pool == nil {
-		checks["postgres"] = "unavailable"
+		checks["postgres"] = healthUnavailable
 		status = http.StatusServiceUnavailable
-		overall = "unavailable"
+		overall = healthUnavailable
 	} else if err := h.pool.Ping(ctx); err != nil {
-		checks["postgres"] = "unavailable"
+		checks["postgres"] = healthUnavailable
 		status = http.StatusServiceUnavailable
-		overall = "unavailable"
+		overall = healthUnavailable
 		h.logger.Error("Postgres readiness check failed", zap.Error(err))
 	}
 
