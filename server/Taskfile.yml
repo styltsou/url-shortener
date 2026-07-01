@@ -55,17 +55,32 @@ tasks:
       - go run github.com/air-verse/air@latest
 
   migrate:
-    desc: Run all pending migrations (up)
+    desc: Run all pending Postgres migrations (up)
     cmds:
       - ./scripts/migrate-up.sh
 
   rollback:
-    desc: Rollback the last migration (run corresponding .down.sql file)
+    desc: Rollback the last Postgres migration (run corresponding .down.sql file)
     cmds:
       - ./scripts/migrate-down.sh
 
   migrate-status:
-    desc: Show migration status (list all migration files and their applied status)
+    desc: Show Postgres migration status (list all migration files and their applied status)
     cmds:
       - ./scripts/migrate-status.sh
+
+  migrate-clickhouse:
+    desc: Run all pending ClickHouse migrations (up)
+    cmds:
+      - go run ./cmd/clickhouse-migrate up
+
+  migrate-clickhouse-down:
+    desc: Rollback the last ClickHouse migration
+    cmds:
+      - go run ./cmd/clickhouse-migrate down
+
+  migrate-clickhouse-status:
+    desc: Show ClickHouse migration status
+    cmds:
+      - go run ./cmd/clickhouse-migrate status
 

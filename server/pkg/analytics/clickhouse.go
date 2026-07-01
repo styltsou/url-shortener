@@ -136,20 +136,6 @@ func New(ctx context.Context, cfg Config, log logger.Logger) (ClientInterface, e
 		return &nopClient{logger: log}, fmt.Errorf("failed to ping ClickHouse: %w", err)
 	}
 
-	if err := conn.Exec(ctx, fmt.Sprintf(`
-		CREATE TABLE IF NOT EXISTS %s (
-			link_id    UUID,
-			timestamp  DateTime DEFAULT now(),
-			ip         String,
-			user_agent String,
-			referrer   String
-		) ENGINE = MergeTree()
-		ORDER BY (link_id, timestamp)
-	`, tableName)); err != nil {
-		conn.Close()
-		return &nopClient{logger: log}, fmt.Errorf("failed to create click_events table: %w", err)
-	}
-
 	log.Info("ClickHouse connected successfully",
 		zap.String("url", cfg.URL),
 	)
