@@ -29,7 +29,7 @@ git clone <repo-url> && cd url-shortener
 export CLERK_SECRET_KEY=sk_test_...
 export VITE_CLERK_PUBLISHABLE_KEY=pk_test_...
 
-# Start everything with a single command
+# Start the local development stack
 docker compose up --build
 ```
 
@@ -65,6 +65,17 @@ Operational headers:
 
 - `X-Request-ID` is returned on every response and included in production logs.
 - `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`, and `Retry-After` describe rate-limit state.
+
+## Docker
+
+`docker-compose.yml` is intentionally a **development compose**. It starts Postgres, Redis, ClickHouse, the API, and the web client for local work.
+
+For self-hosting on a VPS with Coolify or Dokploy, deploy the app as two separate services:
+
+- Backend: build from `server/Dockerfile`
+- Frontend: build from `client/Dockerfile`
+
+Use the repository root as the Docker build context for both services.
 
 ## Development
 

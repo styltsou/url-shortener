@@ -58,6 +58,16 @@
    go run cmd/main.go
    ```
 
+### Docker Development Stack
+
+The root `docker-compose.yml` is for local development only:
+
+```bash
+docker compose up --build
+```
+
+It starts Postgres, Redis, ClickHouse, the Go API, and the React client. Production/self-hosting should deploy `server/Dockerfile` and `client/Dockerfile` as separate services with production backing services.
+
 ## Development Workflow
 
 ### Making Changes
@@ -76,6 +86,19 @@
    go test ./...
    ```
 
+4. **Check for issues**
+   ```bash
+   go vet ./...
+   go fmt ./...
+   ```
+
+5. **Commit and push**
+   ```bash
+   git add .
+   git commit -m "feat: add new feature"
+   git push origin feature/my-feature
+   ```
+
 ### Operational Endpoints
 
 - `GET /api/v1/health` and `GET /api/v1/health/live` return liveness status.
@@ -91,19 +114,6 @@ RATE_LIMIT_WINDOW_SECONDS=60
 ```
 
 Set `RATE_LIMIT_REQUESTS=0` to disable rate limiting locally.
-
-4. **Check for issues**
-   ```bash
-   go vet ./...
-   go fmt ./...
-   ```
-
-5. **Commit and push**
-   ```bash
-   git add .
-   git commit -m "feat: add new feature"
-   git push origin feature/my-feature
-   ```
 
 ### Adding Database Changes
 

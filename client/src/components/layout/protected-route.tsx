@@ -1,7 +1,7 @@
 import { useAuth } from "@clerk/clerk-react";
 import { Navigate } from "@tanstack/react-router";
-import { ReactNode } from "react";
-import { LoadingState } from "./shared/loading-state";
+import type { ReactNode } from "react";
+import { LoadingState } from "@/components/shared/loading-state";
 
 interface ProtectedRouteProps {
 	children: ReactNode;

@@ -46,12 +46,13 @@ CLICKHOUSE_TABLE_NAME=link4it.click_events
 ```env
 VITE_API_BASE_URL=https://your-api.example
 VITE_CLERK_PUBLISHABLE_KEY=pk_live_...
+VITE_SHORT_DOMAIN=your-short-domain.example
 ```
 
 ## Deployment Steps
 
 1. Provision PostgreSQL and run migrations from `server/migrations`.
-2. Provision Redis and optionally ClickHouse.
+2. Provision Redis and optionally ClickHouse. These can be managed services or separate VPS/Coolify/Dokploy services.
 3. Create a Clerk production app and configure OAuth callback URLs for the frontend domain.
 4. Deploy the backend container from `server/Dockerfile`.
 5. Deploy the frontend container from `client/Dockerfile`, or run `pnpm build` and serve `client/dist`.
@@ -61,6 +62,47 @@ VITE_CLERK_PUBLISHABLE_KEY=pk_live_...
    - Short-link domain to backend host if separate from the API domain.
 7. Set `BASE_URL` to the public short-link domain.
 8. Set `CORS_ALLOWED_ORIGINS` to the exact frontend origin.
+
+## Coolify / Dokploy Notes
+
+Deploy the backend and frontend as **separate applications**. Do not use `docker-compose.yml` for production; it is a local development stack with development credentials and bundled databases.
+
+For both applications:
+
+- Docker build context: repository root
+- Dockerfile path:
+  - Backend: `server/Dockerfile`
+  - Frontend: `client/Dockerfile`
+
+Backend runtime environment:
+
+- Set the backend variables from "Required Backend Environment".
+- Expose port `8080`.
+- Use `/api/v1/health/ready` as the health check path.
+
+Frontend build environment:
+
+The frontend is a Vite static build, so public frontend variables are compiled into the image at build time. Configure these as build arguments in Coolify/Dokploy:
+
+```env
+VITE_API_BASE_URL=https://your-api.example
+VITE_CLERK_PUBLISHABLE_KEY=pk_live_...
+VITE_SHORT_DOMAIN=your-short-domain.example
+```
+
+Expose frontend port `80`. The frontend image includes an Nginx SPA fallback so client-side routes work after refresh.
+
+## Local Development Compose
+
+`docker-compose.yml` is for local development only. It starts:
+
+- PostgreSQL on `localhost:5432`
+- Redis on `localhost:6379`
+- ClickHouse on `localhost:9000` and `localhost:8123`
+- Backend on `localhost:8080`
+- Frontend on `localhost:5173`
+
+The dev compose disables API rate limiting with `RATE_LIMIT_REQUESTS=0` to avoid interrupting local testing.
 
 ## Health Checks
 
