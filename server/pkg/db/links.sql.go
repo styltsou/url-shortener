@@ -267,24 +267,24 @@ func (q *Queries) GetLinkByShortcodeAndUser(ctx context.Context, arg GetLinkBySh
 }
 
 const getLinkForRedirect = `-- name: GetLinkForRedirect :one
-SELECT id, original_url
+SELECT id, original_url, expires_at
 FROM links
 WHERE shortcode = $1
 AND deleted_at IS NULL
 AND is_active = true
-AND (expires_at IS NULL OR expires_at > NOW())
 LIMIT 1
 `
 
 type GetLinkForRedirectRow struct {
-	ID          uuid.UUID `json:"id"`
-	OriginalUrl string    `json:"original_url"`
+	ID          uuid.UUID        `json:"id"`
+	OriginalUrl string           `json:"original_url"`
+	ExpiresAt   pgtype.Timestamp `json:"expires_at"`
 }
 
 func (q *Queries) GetLinkForRedirect(ctx context.Context, shortcode string) (GetLinkForRedirectRow, error) {
 	row := q.db.QueryRow(ctx, getLinkForRedirect, shortcode)
 	var i GetLinkForRedirectRow
-	err := row.Scan(&i.ID, &i.OriginalUrl)
+	err := row.Scan(&i.ID, &i.OriginalUrl, &i.ExpiresAt)
 	return i, err
 }
 
@@ -292,6 +292,7 @@ const getRecentLinks = `-- name: GetRecentLinks :many
 SELECT id, shortcode, original_url, is_active, expires_at, created_at, updated_at
 FROM links
 WHERE user_id = $1 AND deleted_at IS NULL
+AND (expires_at IS NULL OR expires_at > NOW())
 ORDER BY created_at DESC
 LIMIT $2
 `

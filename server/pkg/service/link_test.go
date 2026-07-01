@@ -869,6 +869,32 @@ func TestLinkService_GetOriginalURL(t *testing.T) {
 		}
 	})
 
+	t.Run("expired link returns LinkExpired error", func(t *testing.T) {
+		mockQueries := &mockQueries{
+			GetLinkForRedirectFunc: func(ctx context.Context, code string) (db.GetLinkForRedirectRow, error) {
+				return db.GetLinkForRedirectRow{
+					ID:          uuid.New(),
+					OriginalUrl: originalURL,
+					ExpiresAt:   pgtype.Timestamp{Time: time.Now().Add(-1 * time.Hour), Valid: true},
+				}, nil
+			},
+		}
+
+		service := &LinkService{
+			queries: mockQueries,
+			cache:   nil,
+			logger:  createTestLogger(),
+		}
+		_, err := service.GetOriginalURL(ctx, shortcode)
+
+		if err == nil {
+			t.Errorf("GetOriginalURL() expected error for expired link")
+		}
+		if !errors.Is(err, apperrors.LinkExpired) {
+			t.Errorf("GetOriginalURL() error = %v, want %v", err, apperrors.LinkExpired)
+		}
+	})
+
 	t.Run("deleted links cannot be used for redirect", func(t *testing.T) {
 		// Simulate deleted link: SQL query filters WHERE deleted_at IS NULL
 		// So deleted links return sql.ErrNoRows

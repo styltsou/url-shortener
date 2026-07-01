@@ -398,6 +398,11 @@ func (s *LinkService) GetOriginalURL(ctx context.Context, code string) (db.GetLi
 		return db.GetLinkForRedirectRow{}, fmt.Errorf("failed to get link: %w", err)
 	}
 
+	// Check if the link has expired (in Go, so we can return a specific error)
+	if link.ExpiresAt.Valid && link.ExpiresAt.Time.Before(time.Now()) {
+		return db.GetLinkForRedirectRow{}, fmt.Errorf("%w: code %s", apperrors.LinkExpired, code)
+	}
+
 	// Populate cache for next time (non-blocking - don't fail if cache write fails)
 	if s.cache != nil {
 		if err := s.cache.Set(ctx, cacheKey, link.OriginalUrl, cacheTTL).Err(); err != nil {

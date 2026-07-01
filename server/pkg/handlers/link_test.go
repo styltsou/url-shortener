@@ -1176,6 +1176,16 @@ func TestLinkHandler_Redirect(t *testing.T) {
 			},
 			expectedStatus: http.StatusNotFound,
 		},
+		{
+			name:      "link expired",
+			shortcode: shortcode,
+			mockService: &mockLinkService{
+				GetOriginalURLFunc: func(ctx context.Context, code string) (db.GetLinkForRedirectRow, error) {
+					return db.GetLinkForRedirectRow{}, apperrors.LinkExpired
+				},
+			},
+			expectedStatus: http.StatusGone,
+		},
 	}
 
 	for _, tt := range tests {

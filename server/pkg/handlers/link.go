@@ -67,6 +67,26 @@ func (h *LinkHandler) Redirect(w http.ResponseWriter, r *http.Request) {
 
 	link, err := h.LinkService.GetOriginalURL(r.Context(), shortcode)
 	if err != nil {
+		if errors.Is(err, apperrors.LinkExpired) {
+			h.logger.Info("Link expired for redirect",
+				zap.Error(err),
+				zap.String("shortcode", shortcode),
+				zap.String("method", r.Method),
+				zap.String("path", r.URL.Path),
+				zap.String("remote_addr", r.RemoteAddr),
+			)
+			render.Status(r, http.StatusGone)
+			render.HTML(w, r, `<!DOCTYPE html>
+<html>
+	<head><title>Link Expired</title></head>
+	<body>
+		<h1>410 - Link Expired</h1>
+		<p>This link has expired.</p>
+	</body>
+</html>`)
+			return
+		}
+
 		h.logger.Warn("Link not found for redirect",
 			zap.Error(err),
 			zap.String("shortcode", shortcode),
@@ -455,6 +475,21 @@ func (h *LinkHandler) GetLinkAnalytics(w http.ResponseWriter, r *http.Request) {
 // handleError maps errors to HTTP responses and writes them directly
 func (h *LinkHandler) handleError(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
+	case errors.Is(err, apperrors.LinkExpired):
+		h.logger.Info("Link expired",
+			zap.Error(err),
+			zap.String("method", r.Method),
+			zap.String("path", r.URL.Path),
+		)
+		render.Status(r, http.StatusGone)
+		render.JSON(w, r, dto.ErrorResponse{
+			Error: dto.ErrorObject{
+				Code:   apperrors.CodeLinkExpired,
+				Title:  apperrors.LinkExpired.Error(),
+				Detail: "This link has expired",
+			},
+		})
+
 	case errors.Is(err, apperrors.LinkNotFound):
 		h.logger.Warn("Link not found",
 			zap.Error(err),

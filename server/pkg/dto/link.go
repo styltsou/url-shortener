@@ -20,6 +20,13 @@ type CreateLink struct {
 	TagIDs    []uuid.UUID `json:"tag_ids" validate:"omitempty,dive"`
 }
 
+func (dto *CreateLink) Validate() error {
+	if dto.ExpiresAt != nil && dto.ExpiresAt.Before(time.Now()) {
+		return errors.New("expires_at must be set to a future time")
+	}
+	return nil
+}
+
 type UpdateLink struct {
 	Shortcode *string      `json:"shortcode"`
 	IsActive  *bool        `json:"is_active"`

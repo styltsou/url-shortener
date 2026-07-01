@@ -10,12 +10,11 @@ RETURNING id, shortcode, original_url, expires_at, is_active, created_at, update
 
 
 -- name: GetLinkForRedirect :one
-SELECT id, original_url
+SELECT id, original_url, expires_at
 FROM links
 WHERE shortcode = $1
 AND deleted_at IS NULL
 AND is_active = true
-AND (expires_at IS NULL OR expires_at > NOW())
 LIMIT 1;
 
 
@@ -198,6 +197,7 @@ RETURNING id, shortcode, original_url, is_active, expires_at, created_at, update
 SELECT id, shortcode, original_url, is_active, expires_at, created_at, updated_at
 FROM links
 WHERE user_id = $1 AND deleted_at IS NULL
+AND (expires_at IS NULL OR expires_at > NOW())
 ORDER BY created_at DESC
 LIMIT $2;
 
