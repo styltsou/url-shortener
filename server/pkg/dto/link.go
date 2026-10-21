@@ -18,6 +18,12 @@ type CreateLink struct {
 	Shortcode *string     `json:"shortcode" validate:"omitempty,min=1"`
 	ExpiresAt *time.Time  `json:"expires_at" validate:"omitempty"`
 	TagIDs    []uuid.UUID `json:"tag_ids" validate:"omitempty,dive"`
+	ForceNew  bool        `json:"force_new"`
+}
+
+type CreateLinkResponse struct {
+	Data     LinkResponse `json:"data"`
+	Existing bool         `json:"existing"`
 }
 
 func (dto *CreateLink) Validate() error {

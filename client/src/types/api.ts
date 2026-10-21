@@ -22,9 +22,15 @@ export interface Link {
 
 export interface CreateLinkRequest {
 	url: string;
+	force_new?: boolean;
 	shortcode?: string;
 	expires_at?: string | null; // ISO 8601 datetime string
 	tag_ids?: string[];
+}
+
+export interface CreateLinkResponse {
+	data: Link;
+	existing: boolean;
 }
 
 export interface UpdateLinkRequest {

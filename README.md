@@ -84,7 +84,7 @@ Operational headers:
 - `X-Request-ID` is returned on every response and included in production logs.
 - `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`, and `Retry-After` describe rate-limit state.
 
-Shortcodes use 1–20 ASCII letters, digits, hyphens or underscores. `api` is reserved. A generated shortcode begins with a deterministic 7-character code; a collision (including a repeated URL for the same user) retries with a random code. Soft-deleted shortcodes can be reused.
+Shortcodes use 1–20 ASCII letters, digits, hyphens or underscores. `api` is reserved. A generated shortcode begins with a deterministic 7-character code; an occupied code retries with a random code. Creating the same exact URL again returns an existing active link for that user (`200`, `existing: true`) without changing its settings or tags. Supply `force_new: true` or a custom shortcode to create a separate link (`201`, `existing: false`). Inactive, expired, and deleted links are not offered. Soft-deleted shortcodes can be reused.
 
 Redis redirect entries live for at most one minute and never past a link's expiration. Updates and deletes invalidate them on a best-effort basis. If Redis is unavailable during invalidation, a cached redirect may remain usable until its TTL ends; immediate revocation is not guaranteed. Redirects fall back to PostgreSQL when Redis is unavailable. ClickHouse analytics are best-effort and queued events may be lost if shutdown exceeds five seconds.
 

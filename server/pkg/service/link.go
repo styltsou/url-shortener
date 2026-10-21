@@ -128,6 +128,8 @@ type LinkQueries interface {
 	RemoveTagsFromLink(ctx context.Context, arg db.RemoveTagsFromLinkParams) error
 	CountOwnedTags(ctx context.Context, arg db.CountOwnedTagsParams) (int64, error)
 	GetLinkByIdAndUserWithTags(ctx context.Context, arg db.GetLinkByIdAndUserWithTagsParams) (db.GetLinkByIdAndUserWithTagsRow, error)
+	LockLinkURL(ctx context.Context, arg db.LockLinkURLParams) error
+	GetExistingLinkIDByURLAndUser(ctx context.Context, arg db.GetExistingLinkIDByURLAndUserParams) (uuid.UUID, error)
 	GetRecentLinks(ctx context.Context, arg db.GetRecentLinksParams) ([]db.GetRecentLinksRow, error)
 	CountActiveLinks(ctx context.Context, userID string) (int64, error)
 	ListUserLinkIDs(ctx context.Context, userID string) ([]uuid.UUID, error)
@@ -203,8 +205,45 @@ func (s *LinkService) CreateShortLinkWithTags(
 	expiresAt *time.Time,
 	tagIDs []uuid.UUID,
 ) (db.GetLinkByIdAndUserWithTagsRow, error) {
+	link, _, err := s.CreateOrFindShortLinkWithTags(ctx, userID, originalURL, customShortcode, expiresAt, tagIDs, true)
+	return link, err
+}
+
+// CreateOrFindShortLinkWithTags offers an active link for the same exact URL to its owner.
+// Explicit custom codes and forceNew requests always create a separate link.
+func (s *LinkService) CreateOrFindShortLinkWithTags(
+	ctx context.Context,
+	userID string,
+	originalURL string,
+	customShortcode *string,
+	expiresAt *time.Time,
+	tagIDs []uuid.UUID,
+	forceNew bool,
+) (db.GetLinkByIdAndUserWithTagsRow, bool, error) {
 	var created db.GetLinkByIdAndUserWithTagsRow
+	var existing bool
 	if err := s.runInTx(ctx, func(qtx LinkQueries) error {
+		if !forceNew && customShortcode == nil {
+			if err := validateURL(originalURL); err != nil {
+				return err
+			}
+			key := db.LockLinkURLParams{UserID: userID, OriginalUrl: originalURL}
+			if err := qtx.LockLinkURL(ctx, key); err != nil {
+				return fmt.Errorf("failed to lock link URL: %w", err)
+			}
+			id, err := qtx.GetExistingLinkIDByURLAndUser(ctx, db.GetExistingLinkIDByURLAndUserParams(key))
+			if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+				return fmt.Errorf("failed to find existing link: %w", err)
+			}
+			if err == nil {
+				created, err = qtx.GetLinkByIdAndUserWithTags(ctx, db.GetLinkByIdAndUserWithTagsParams{ID: id, UserID: userID})
+				if err != nil {
+					return fmt.Errorf("failed to get existing link: %w", err)
+				}
+				existing = true
+				return nil
+			}
+		}
 		link, err := s.createShortLink(ctx, qtx, userID, originalURL, customShortcode, expiresAt)
 		if err != nil {
 			return err
@@ -233,10 +272,10 @@ func (s *LinkService) CreateShortLinkWithTags(
 		}
 		return nil
 	}); err != nil {
-		return db.GetLinkByIdAndUserWithTagsRow{}, err
+		return db.GetLinkByIdAndUserWithTagsRow{}, false, err
 	}
 
-	return created, nil
+	return created, existing, nil
 }
 
 func (s *LinkService) createShortLink(

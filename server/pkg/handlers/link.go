@@ -37,6 +37,7 @@ type LinkService interface {
 	GetOriginalURL(ctx context.Context, code string) (db.GetLinkForRedirectRow, error)
 	CreateShortLink(ctx context.Context, userID string, originalURL string, customShortcode *string, expiresAt *time.Time) (db.TryCreateLinkRow, error)
 	CreateShortLinkWithTags(ctx context.Context, userID string, originalURL string, customShortcode *string, expiresAt *time.Time, tagIDs []uuid.UUID) (db.GetLinkByIdAndUserWithTagsRow, error)
+	CreateOrFindShortLinkWithTags(ctx context.Context, userID string, originalURL string, customShortcode *string, expiresAt *time.Time, tagIDs []uuid.UUID, forceNew bool) (db.GetLinkByIdAndUserWithTagsRow, bool, error)
 	ListAllLinks(ctx context.Context, userID string, isActive *bool, tagIDs []uuid.UUID, page, limit int) (*service.ListLinksResult, error)
 	GetLinkByShortcode(ctx context.Context, userID string, shortcode string) (db.GetLinkByShortcodeAndUserRow, error)
 	UpdateLink(ctx context.Context, userID string, id uuid.UUID, shortcode *string, isActive *bool, expiresAtSet bool, expiresAt *time.Time) (db.UpdateLinkRow, error)
@@ -136,35 +137,39 @@ func (h *LinkHandler) CreateLink(w http.ResponseWriter, r *http.Request) {
 	reqBody := mw.GetRequestBodyFromContext[dto.CreateLink](r.Context())
 	userID := mw.GetUserIDFromContext(r.Context())
 
-	createdLink, err := h.LinkService.CreateShortLinkWithTags(
+	createdLink, existing, err := h.LinkService.CreateOrFindShortLinkWithTags(
 		r.Context(),
 		userID,
 		reqBody.URL,
 		reqBody.Shortcode,
 		reqBody.ExpiresAt,
 		reqBody.TagIDs,
+		reqBody.ForceNew,
 	)
 	if err != nil {
 		h.handleError(w, r, err)
 		return
 	}
 
-	h.logger.Info("Short link created successfully",
+	h.logger.Info("Short link create request resolved",
 		zap.String("user_id", userID),
+		zap.Bool("existing", existing),
 		zap.String("link_id", createdLink.ID.String()),
 		zap.String("short_code", createdLink.Shortcode),
 		zap.String("original_url", createdLink.OriginalUrl),
 	)
 
-	render.Status(r, http.StatusCreated)
 	response, err := dto.LinkFromWithTagsRow(createdLink)
 	if err != nil {
 		h.handleError(w, r, err)
 		return
 	}
-	render.JSON(w, r, &dto.SuccessResponse[dto.LinkResponse]{
-		Data: response,
-	})
+	if existing {
+		render.Status(r, http.StatusOK)
+	} else {
+		render.Status(r, http.StatusCreated)
+	}
+	render.JSON(w, r, &dto.CreateLinkResponse{Data: response, Existing: existing})
 }
 
 // List links: GET /api/v1/links?tags=id1,id2&status=active|inactive|all

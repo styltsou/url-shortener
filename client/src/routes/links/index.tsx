@@ -19,6 +19,7 @@ import { LinksPagination } from "@/components/links/links-pagination";
 import { PageSizeSelector } from "@/components/links/page-size-selector";
 import { LoadingState } from "@/components/shared/loading-state";
 import { DEFAULT_PAGE_SIZE } from "@/lib/constants";
+import type { CreateLinkRequest } from "@/types/api";
 
 export const Route = createFileRoute("/links/")({
 	component: LinksPage,
@@ -67,19 +68,7 @@ function LinksPage() {
 		return <Navigate to="/login" />;
 	}
 
-	const handleShorten = async (
-		originalUrl: string,
-		customCode?: string,
-		expirationDate?: string,
-		tagIds?: string[],
-	) => {
-		await createLink.mutateAsync({
-			url: originalUrl,
-			...(customCode && { shortcode: customCode }),
-			...(expirationDate && { expires_at: expirationDate }),
-			...(tagIds && tagIds.length > 0 && { tag_ids: tagIds }),
-		});
-	};
+	const handleShorten = (request: CreateLinkRequest) => createLink.mutateAsync(request);
 
 	if (error) {
 		return <LinksErrorState error={error} />;

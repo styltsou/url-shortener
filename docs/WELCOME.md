@@ -111,7 +111,7 @@ pnpm dev
 ## Key Details
 
 ### Shortcode Generation
-Auto-generated shortcodes are **deterministic** — derived from SHA-256 of the URL + user ID, then base62-encoded to 7 characters. Same URL by the same user always gets the same shortcode (deduplication). Length 7 gives 62^7 ≈ 3.5 trillion combinations. Custom shortcodes are user-provided and go through the same uniqueness constraint.
+The first auto-generated shortcode candidate is derived from SHA-256 of the URL and user ID, then base62-encoded to 7 characters. Occupied candidates retry with a random code. The create API offers an existing active link for the same exact URL and user; `force_new: true` or a custom shortcode creates a separate link. Length 7 gives 62^7 ≈ 3.5 trillion combinations. Custom shortcodes are user-provided and go through the same uniqueness constraint.
 
 ## Development Patterns
 

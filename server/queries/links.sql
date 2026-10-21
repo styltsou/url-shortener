@@ -14,6 +14,17 @@ AND deleted_at IS NULL
 AND is_active = true
 LIMIT 1;
 
+-- name: LockLinkURL :exec
+SELECT pg_advisory_xact_lock(hashtextextended(@user_id::TEXT || ':' || @original_url::TEXT, 0));
+
+-- name: GetExistingLinkIDByURLAndUser :one
+SELECT id FROM links
+WHERE user_id = @user_id::TEXT AND original_url = @original_url::TEXT
+  AND deleted_at IS NULL AND is_active = true
+  AND (expires_at IS NULL OR expires_at > NOW())
+ORDER BY created_at DESC, id DESC
+LIMIT 1;
+
 
 -- name: GetLinkByIdAndUser :one
 SELECT id, shortcode, original_url, expires_at, is_active, created_at, updated_at
@@ -36,7 +47,7 @@ SELECT
             json_build_object(
                 'id', t.id,
                 'name', t.name,
-                'created_at', t.created_at
+                'created_at', t.created_at AT TIME ZONE 'UTC'
             )
         ) FILTER (WHERE t.id IS NOT NULL),
         '[]'::json
@@ -64,7 +75,7 @@ SELECT
             json_build_object(
                 'id', t.id,
                 'name', t.name,
-                'created_at', t.created_at
+                'created_at', t.created_at AT TIME ZONE 'UTC'
             )
         ) FILTER (WHERE t.id IS NOT NULL),
         '[]'::json
@@ -122,7 +133,7 @@ SELECT
             json_build_object(
                 'id', t.id,
                 'name', t.name,
-                'created_at', t.created_at
+                'created_at', t.created_at AT TIME ZONE 'UTC'
             )
         ) FILTER (WHERE t.id IS NOT NULL),
         '[]'::json

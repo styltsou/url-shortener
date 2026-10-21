@@ -19,14 +19,20 @@ import { TagCombobox } from "@/components/link/tag-combobox";
 import { useTags, useCreateTag } from "@/hooks/use-tags";
 import { toast } from "sonner";
 import type { Tag } from "@/types/url";
+import type { Url } from "@/types/url";
+import type { CreateLinkRequest } from "@/types/api";
+import { Link as RouterLink } from "@tanstack/react-router";
+import {
+	AlertDialog,
+	AlertDialogContent,
+	AlertDialogDescription,
+	AlertDialogFooter,
+	AlertDialogHeader,
+	AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 interface NewUrlFormProps {
-	onShorten: (
-		originalUrl: string,
-		customCode?: string,
-		expirationDate?: string,
-		tagIds?: string[],
-	) => Promise<void>;
+	onShorten: (request: CreateLinkRequest) => Promise<{ link: Url; existing: boolean }>;
 	isLoading: boolean;
 }
 
@@ -40,6 +46,9 @@ interface FormState {
 }
 
 export function NewUrlForm({ onShorten, isLoading }: NewUrlFormProps) {
+	const [duplicate, setDuplicate] = useState<{ link: Url; request: CreateLinkRequest } | null>(
+		null,
+	);
 	const [formState, setFormState] = useState<FormState>({
 		originalUrl: "",
 		customCode: "",
@@ -57,6 +66,17 @@ export function NewUrlForm({ onShorten, isLoading }: NewUrlFormProps) {
 		id: tag.id,
 		name: tag.name,
 	}));
+
+	const resetForm = () => {
+		setFormState({
+			originalUrl: "",
+			customCode: "",
+			expirationDate: undefined,
+			expirationTime: "23:59",
+			selectedTags: [],
+			showOptions: false,
+		});
+	};
 
 	const handleSubmit = async (e: React.FormEvent) => {
 		e.preventDefault();
@@ -84,22 +104,33 @@ export function NewUrlForm({ onShorten, isLoading }: NewUrlFormProps) {
 		const tagIds =
 			formState.selectedTags.length > 0 ? formState.selectedTags.map((tag) => tag.id) : undefined;
 
-		await onShorten(
-			formState.originalUrl,
-			formState.customCode || undefined,
-			expirationDateString,
-			tagIds,
-		);
+		const request: CreateLinkRequest = {
+			url: formState.originalUrl,
+			...(formState.customCode && { shortcode: formState.customCode }),
+			...(expirationDateString && { expires_at: expirationDateString }),
+			...(tagIds && { tag_ids: tagIds }),
+		};
+		try {
+			const result = await onShorten(request);
+			if (result.existing) {
+				setDuplicate({ link: result.link, request });
+			} else {
+				resetForm();
+			}
+		} catch {
+			// The mutation displays the API error.
+		}
+	};
 
-		// Reset form after successful submission
-		setFormState({
-			originalUrl: "",
-			customCode: "",
-			expirationDate: undefined,
-			expirationTime: "23:59",
-			selectedTags: [],
-			showOptions: false,
-		});
+	const handleCreateAnother = async () => {
+		if (!duplicate) return;
+		try {
+			await onShorten({ ...duplicate.request, force_new: true });
+			setDuplicate(null);
+			resetForm();
+		} catch {
+			// Keep the choice open so the user can retry.
+		}
 	};
 
 	const handleCreateTag = async (tagName: string): Promise<Tag> => {
@@ -323,6 +354,35 @@ export function NewUrlForm({ onShorten, isLoading }: NewUrlFormProps) {
 					</div>
 				</div>
 			</form>
+			<AlertDialog
+				open={duplicate !== null}
+				onOpenChange={(open) => {
+					if (!open && !isLoading) setDuplicate(null);
+				}}
+			>
+				<AlertDialogContent>
+					<AlertDialogHeader>
+						<AlertDialogTitle>You already have a link for this URL</AlertDialogTitle>
+						<AlertDialogDescription>
+							{duplicate && `${SHORT_DOMAIN}/${duplicate.link.shortCode}`} is active. You can open
+							it or create another link with separate settings and analytics. Your existing link
+							will not change.
+						</AlertDialogDescription>
+					</AlertDialogHeader>
+					<AlertDialogFooter>
+						{duplicate && (
+							<Button variant="outline" asChild>
+								<RouterLink to="/links/$shortcode" params={{ shortcode: duplicate.link.shortCode }}>
+									Open existing link
+								</RouterLink>
+							</Button>
+						)}
+						<Button onClick={handleCreateAnother} disabled={isLoading}>
+							{isLoading ? "Creating..." : "Create another link anyway"}
+						</Button>
+					</AlertDialogFooter>
+				</AlertDialogContent>
+			</AlertDialog>
 		</div>
 	);
 }

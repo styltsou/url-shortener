@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 	"github.com/styltsou/url-shortener/server/pkg/db"
+	"github.com/styltsou/url-shortener/server/pkg/dto"
 	apperrors "github.com/styltsou/url-shortener/server/pkg/errors"
 )
 
@@ -235,5 +236,131 @@ func TestPostgresOwnershipTagsAndLinkUpdates(t *testing.T) {
 	cleared, err := links.UpdateLink(ctx, "user-a", linkA.ID, nil, nil, true, nil)
 	if err != nil || cleared.ExpiresAt.Valid {
 		t.Fatalf("expiration was not cleared: link=%+v err=%v", cleared, err)
+	}
+}
+
+func TestPostgresCreateOrFindShortLink(t *testing.T) {
+	pool := integrationPool(t)
+	ctx := context.Background()
+	queries := db.New(pool)
+	links := NewLinkService(pool, queries, nil, nil, createTestLogger())
+	tags := NewTagService(queries, createTestLogger())
+	if _, _, err := links.CreateOrFindShortLinkWithTags(ctx, "user-a", "not-a-url", nil, nil, nil, false); !errors.Is(err, apperrors.InvalidURL) {
+		t.Fatalf("invalid URL: %v", err)
+	}
+	tag, err := tags.CreateTag(ctx, "user-a", "campaign")
+	if err != nil {
+		t.Fatal(err)
+	}
+	url := "https://example.com/repeated"
+	first, existing, err := links.CreateOrFindShortLinkWithTags(ctx, "user-a", url, nil, nil, nil, false)
+	if err != nil || existing {
+		t.Fatalf("first create: existing=%v err=%v", existing, err)
+	}
+	expires := time.Now().Add(time.Hour)
+	again, existing, err := links.CreateOrFindShortLinkWithTags(ctx, "user-a", url, nil, &expires, []uuid.UUID{tag.ID}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	againResponse, err := dto.LinkFromWithTagsRow(again)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !existing || again.ID != first.ID || again.ExpiresAt.Valid || len(againResponse.Tags) != 0 {
+		t.Fatalf("repeat changed existing link: first=%+v again=%+v existing=%v err=%v", first, again, existing, err)
+	}
+	forced, existing, err := links.CreateOrFindShortLinkWithTags(ctx, "user-a", url, nil, &expires, []uuid.UUID{tag.ID}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	forcedResponse, err := dto.LinkFromWithTagsRow(forced)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if existing || forced.ID == first.ID || !forced.ExpiresAt.Valid || len(forcedResponse.Tags) != 1 || forcedResponse.Tags[0].ID != tag.ID {
+		t.Fatalf("force new: link=%+v existing=%v err=%v", forced, existing, err)
+	}
+	other, existing, err := links.CreateOrFindShortLinkWithTags(ctx, "user-b", url, nil, nil, nil, false)
+	if err != nil || existing || other.ID == first.ID {
+		t.Fatalf("other user: link=%+v existing=%v err=%v", other, existing, err)
+	}
+	alias := "my-campaign"
+	custom, existing, err := links.CreateOrFindShortLinkWithTags(ctx, "user-a", url, &alias, nil, nil, false)
+	if err != nil || existing || custom.Shortcode != alias {
+		t.Fatalf("custom alias: link=%+v existing=%v err=%v", custom, existing, err)
+	}
+
+	for _, tc := range []struct {
+		name   string
+		url    string
+		change func(uuid.UUID) error
+	}{
+		{"inactive", "https://example.com/inactive", func(id uuid.UUID) error {
+			active := false
+			_, err := links.UpdateLink(ctx, "user-a", id, nil, &active, false, nil)
+			return err
+		}},
+		{"deleted", "https://example.com/deleted", func(id uuid.UUID) error {
+			_, err := links.DeleteLink(ctx, "user-a", id)
+			return err
+		}},
+		{"expired", "https://example.com/expired", func(id uuid.UUID) error {
+			_, err := pool.Exec(ctx, "UPDATE links SET expires_at=NOW() - INTERVAL '1 second' WHERE id=$1", id)
+			return err
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			initial, _, err := links.CreateOrFindShortLinkWithTags(ctx, "user-a", tc.url, nil, nil, nil, false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := tc.change(initial.ID); err != nil {
+				t.Fatal(err)
+			}
+			next, existing, err := links.CreateOrFindShortLinkWithTags(ctx, "user-a", tc.url, nil, nil, nil, false)
+			if err != nil || existing || next.ID == initial.ID {
+				t.Fatalf("should create after %s: next=%+v existing=%v err=%v", tc.name, next, existing, err)
+			}
+		})
+	}
+
+	const concurrent = 8
+	results := make(chan struct {
+		id       uuid.UUID
+		existing bool
+		err      error
+	}, concurrent)
+	var wg sync.WaitGroup
+	for range concurrent {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			link, existing, err := links.CreateOrFindShortLinkWithTags(ctx, "user-a", "https://example.com/concurrent", nil, nil, nil, false)
+			results <- struct {
+				id       uuid.UUID
+				existing bool
+				err      error
+			}{link.ID, existing, err}
+		}()
+	}
+	wg.Wait()
+	close(results)
+	var firstID uuid.UUID
+	created := 0
+	for result := range results {
+		if result.err != nil {
+			t.Fatal(result.err)
+		}
+		if !result.existing {
+			created++
+		}
+		if firstID == uuid.Nil {
+			firstID = result.id
+		} else if result.id != firstID {
+			t.Fatalf("concurrent requests returned different links: %s, %s", firstID, result.id)
+		}
+	}
+	if created != 1 {
+		t.Fatalf("created %d links for concurrent requests", created)
 	}
 }

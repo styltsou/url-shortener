@@ -21,21 +21,23 @@ import (
 
 // mockQueries is a mock implementation of the database queries
 type mockQueries struct {
-	TryCreateLinkFunc              func(ctx context.Context, arg db.TryCreateLinkParams) (db.TryCreateLinkRow, error)
-	ListUserLinksFunc              func(ctx context.Context, arg db.ListUserLinksParams) ([]db.ListUserLinksRow, error)
-	CountUserLinksFunc             func(ctx context.Context, arg db.CountUserLinksParams) (int64, error)
-	GetLinkByIdAndUserFunc         func(ctx context.Context, arg db.GetLinkByIdAndUserParams) (db.GetLinkByIdAndUserRow, error)
-	GetLinkByShortcodeAndUserFunc  func(ctx context.Context, arg db.GetLinkByShortcodeAndUserParams) (db.GetLinkByShortcodeAndUserRow, error)
-	GetLinkForRedirectFunc         func(ctx context.Context, shortcode string) (db.GetLinkForRedirectRow, error)
-	UpdateLinkFunc                 func(ctx context.Context, arg db.UpdateLinkParams) (db.UpdateLinkRow, error)
-	DeleteLinkFunc                 func(ctx context.Context, arg db.DeleteLinkParams) (db.DeleteLinkRow, error)
-	AddTagsToLinkFunc              func(ctx context.Context, arg db.AddTagsToLinkParams) error
-	RemoveTagsFromLinkFunc         func(ctx context.Context, arg db.RemoveTagsFromLinkParams) error
-	CountOwnedTagsFunc             func(ctx context.Context, arg db.CountOwnedTagsParams) (int64, error)
-	GetLinkByIdAndUserWithTagsFunc func(ctx context.Context, arg db.GetLinkByIdAndUserWithTagsParams) (db.GetLinkByIdAndUserWithTagsRow, error)
-	GetRecentLinksFunc             func(ctx context.Context, arg db.GetRecentLinksParams) ([]db.GetRecentLinksRow, error)
-	CountActiveLinksFunc           func(ctx context.Context, userID string) (int64, error)
-	ListUserLinkIDsFunc            func(ctx context.Context, userID string) ([]uuid.UUID, error)
+	TryCreateLinkFunc                 func(ctx context.Context, arg db.TryCreateLinkParams) (db.TryCreateLinkRow, error)
+	ListUserLinksFunc                 func(ctx context.Context, arg db.ListUserLinksParams) ([]db.ListUserLinksRow, error)
+	CountUserLinksFunc                func(ctx context.Context, arg db.CountUserLinksParams) (int64, error)
+	GetLinkByIdAndUserFunc            func(ctx context.Context, arg db.GetLinkByIdAndUserParams) (db.GetLinkByIdAndUserRow, error)
+	GetLinkByShortcodeAndUserFunc     func(ctx context.Context, arg db.GetLinkByShortcodeAndUserParams) (db.GetLinkByShortcodeAndUserRow, error)
+	GetLinkForRedirectFunc            func(ctx context.Context, shortcode string) (db.GetLinkForRedirectRow, error)
+	UpdateLinkFunc                    func(ctx context.Context, arg db.UpdateLinkParams) (db.UpdateLinkRow, error)
+	DeleteLinkFunc                    func(ctx context.Context, arg db.DeleteLinkParams) (db.DeleteLinkRow, error)
+	AddTagsToLinkFunc                 func(ctx context.Context, arg db.AddTagsToLinkParams) error
+	RemoveTagsFromLinkFunc            func(ctx context.Context, arg db.RemoveTagsFromLinkParams) error
+	CountOwnedTagsFunc                func(ctx context.Context, arg db.CountOwnedTagsParams) (int64, error)
+	GetLinkByIdAndUserWithTagsFunc    func(ctx context.Context, arg db.GetLinkByIdAndUserWithTagsParams) (db.GetLinkByIdAndUserWithTagsRow, error)
+	LockLinkURLFunc                   func(ctx context.Context, arg db.LockLinkURLParams) error
+	GetExistingLinkIDByURLAndUserFunc func(ctx context.Context, arg db.GetExistingLinkIDByURLAndUserParams) (uuid.UUID, error)
+	GetRecentLinksFunc                func(ctx context.Context, arg db.GetRecentLinksParams) ([]db.GetRecentLinksRow, error)
+	CountActiveLinksFunc              func(ctx context.Context, userID string) (int64, error)
+	ListUserLinkIDsFunc               func(ctx context.Context, userID string) ([]uuid.UUID, error)
 }
 
 func (m *mockQueries) TryCreateLink(ctx context.Context, arg db.TryCreateLinkParams) (db.TryCreateLinkRow, error) {
@@ -120,6 +122,20 @@ func (m *mockQueries) GetLinkByIdAndUserWithTags(ctx context.Context, arg db.Get
 		return m.GetLinkByIdAndUserWithTagsFunc(ctx, arg)
 	}
 	return db.GetLinkByIdAndUserWithTagsRow{}, errors.New("not implemented")
+}
+
+func (m *mockQueries) LockLinkURL(ctx context.Context, arg db.LockLinkURLParams) error {
+	if m.LockLinkURLFunc != nil {
+		return m.LockLinkURLFunc(ctx, arg)
+	}
+	return errors.New("not implemented")
+}
+
+func (m *mockQueries) GetExistingLinkIDByURLAndUser(ctx context.Context, arg db.GetExistingLinkIDByURLAndUserParams) (uuid.UUID, error) {
+	if m.GetExistingLinkIDByURLAndUserFunc != nil {
+		return m.GetExistingLinkIDByURLAndUserFunc(ctx, arg)
+	}
+	return uuid.Nil, errors.New("not implemented")
 }
 
 func (m *mockQueries) GetRecentLinks(ctx context.Context, arg db.GetRecentLinksParams) ([]db.GetRecentLinksRow, error) {

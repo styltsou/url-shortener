@@ -5,6 +5,7 @@ import { linkToUrl } from "@/types/api";
 import type {
 	Link,
 	CreateLinkRequest,
+	CreateLinkResponse,
 	UpdateLinkRequest,
 	SuccessResponse,
 	PaginationMeta,
@@ -111,10 +112,11 @@ export function useCreateLink() {
 	return useMutation({
 		mutationFn: async (data: CreateLinkRequest) => {
 			const token = await getToken();
-			const response = await apiClient.post<{ data: Link }>("/api/v1/links", data, token);
-			return linkToUrl(response.data);
+			const response = await apiClient.post<CreateLinkResponse>("/api/v1/links", data, token);
+			return { link: linkToUrl(response.data), existing: response.existing };
 		},
-		onSuccess: () => {
+		onSuccess: (result) => {
+			if (result.existing) return;
 			// Invalidate all list queries to refresh the links list
 			queryClient.invalidateQueries({ queryKey: linkKeys.lists() });
 			queryClient.invalidateQueries({ queryKey: dashboardKeys.all });

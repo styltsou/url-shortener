@@ -27,18 +27,19 @@ import (
 
 // mockLinkService is a mock implementation of LinkServiceInterface
 type mockLinkService struct {
-	CreateShortLinkFunc         func(ctx context.Context, userID string, originalURL string, customShortcode *string, expiresAt *time.Time) (db.TryCreateLinkRow, error)
-	CreateShortLinkWithTagsFunc func(ctx context.Context, userID string, originalURL string, customShortcode *string, expiresAt *time.Time, tagIDs []uuid.UUID) (db.GetLinkByIdAndUserWithTagsRow, error)
-	ListAllLinksFunc            func(ctx context.Context, userID string, isActive *bool, tagIDs []uuid.UUID, page, limit int) (*service.ListLinksResult, error)
-	GetLinkByShortcodeFunc      func(ctx context.Context, userID string, shortcode string) (db.GetLinkByShortcodeAndUserRow, error)
-	GetOriginalURLFunc          func(ctx context.Context, code string) (db.GetLinkForRedirectRow, error)
-	UpdateLinkFunc              func(ctx context.Context, userID string, id uuid.UUID, shortcode *string, isActive *bool, expiresAtSet bool, expiresAt *time.Time) (db.UpdateLinkRow, error)
-	DeleteLinkFunc              func(ctx context.Context, userID string, id uuid.UUID) (db.DeleteLinkRow, error)
-	AddTagsToLinkFunc           func(ctx context.Context, userID string, linkID uuid.UUID, tagIDs []uuid.UUID) (db.GetLinkByIdAndUserWithTagsRow, error)
-	RemoveTagsFromLinkFunc      func(ctx context.Context, userID string, linkID uuid.UUID, tagIDs []uuid.UUID) (db.GetLinkByIdAndUserWithTagsRow, error)
-	RecordClickFunc             func(ctx context.Context, linkID uuid.UUID, ip, userAgent, referrer string)
-	GetLinkAnalyticsFunc        func(ctx context.Context, userID string, shortcode string) (*analytics.LinkAnalytics, error)
-	GetDashboardStatsFunc       func(ctx context.Context, userID string) (*service.DashboardStats, error)
+	CreateShortLinkFunc               func(ctx context.Context, userID string, originalURL string, customShortcode *string, expiresAt *time.Time) (db.TryCreateLinkRow, error)
+	CreateShortLinkWithTagsFunc       func(ctx context.Context, userID string, originalURL string, customShortcode *string, expiresAt *time.Time, tagIDs []uuid.UUID) (db.GetLinkByIdAndUserWithTagsRow, error)
+	CreateOrFindShortLinkWithTagsFunc func(ctx context.Context, userID string, originalURL string, customShortcode *string, expiresAt *time.Time, tagIDs []uuid.UUID, forceNew bool) (db.GetLinkByIdAndUserWithTagsRow, bool, error)
+	ListAllLinksFunc                  func(ctx context.Context, userID string, isActive *bool, tagIDs []uuid.UUID, page, limit int) (*service.ListLinksResult, error)
+	GetLinkByShortcodeFunc            func(ctx context.Context, userID string, shortcode string) (db.GetLinkByShortcodeAndUserRow, error)
+	GetOriginalURLFunc                func(ctx context.Context, code string) (db.GetLinkForRedirectRow, error)
+	UpdateLinkFunc                    func(ctx context.Context, userID string, id uuid.UUID, shortcode *string, isActive *bool, expiresAtSet bool, expiresAt *time.Time) (db.UpdateLinkRow, error)
+	DeleteLinkFunc                    func(ctx context.Context, userID string, id uuid.UUID) (db.DeleteLinkRow, error)
+	AddTagsToLinkFunc                 func(ctx context.Context, userID string, linkID uuid.UUID, tagIDs []uuid.UUID) (db.GetLinkByIdAndUserWithTagsRow, error)
+	RemoveTagsFromLinkFunc            func(ctx context.Context, userID string, linkID uuid.UUID, tagIDs []uuid.UUID) (db.GetLinkByIdAndUserWithTagsRow, error)
+	RecordClickFunc                   func(ctx context.Context, linkID uuid.UUID, ip, userAgent, referrer string)
+	GetLinkAnalyticsFunc              func(ctx context.Context, userID string, shortcode string) (*analytics.LinkAnalytics, error)
+	GetDashboardStatsFunc             func(ctx context.Context, userID string) (*service.DashboardStats, error)
 }
 
 func (m *mockLinkService) CreateShortLink(ctx context.Context, userID string, originalURL string, customShortcode *string, expiresAt *time.Time) (db.TryCreateLinkRow, error) {
@@ -66,6 +67,14 @@ func (m *mockLinkService) CreateShortLinkWithTags(ctx context.Context, userID st
 		UpdatedAt:   link.UpdatedAt,
 		Tags:        []interface{}{},
 	}, nil
+}
+
+func (m *mockLinkService) CreateOrFindShortLinkWithTags(ctx context.Context, userID string, originalURL string, customShortcode *string, expiresAt *time.Time, tagIDs []uuid.UUID, forceNew bool) (db.GetLinkByIdAndUserWithTagsRow, bool, error) {
+	if m.CreateOrFindShortLinkWithTagsFunc != nil {
+		return m.CreateOrFindShortLinkWithTagsFunc(ctx, userID, originalURL, customShortcode, expiresAt, tagIDs, forceNew)
+	}
+	link, err := m.CreateShortLinkWithTags(ctx, userID, originalURL, customShortcode, expiresAt, tagIDs)
+	return link, false, err
 }
 
 func (m *mockLinkService) ListAllLinks(ctx context.Context, userID string, isActive *bool, tagIDs []uuid.UUID, page, limit int) (*service.ListLinksResult, error) {
@@ -295,6 +304,49 @@ func TestLinkHandler_CreateLink(t *testing.T) {
 
 			if tt.validateResponse != nil {
 				tt.validateResponse(t, w)
+			}
+		})
+	}
+}
+
+func TestLinkHandler_CreateLinkExistingAndForceNew(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		forceNew bool
+		existing bool
+		status   int
+	}{
+		{"existing", false, true, http.StatusOK},
+		{"force new", true, false, http.StatusCreated},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			handler := &LinkHandler{
+				LinkService: &mockLinkService{CreateOrFindShortLinkWithTagsFunc: func(_ context.Context, userID, originalURL string, _ *string, _ *time.Time, _ []uuid.UUID, forceNew bool) (db.GetLinkByIdAndUserWithTagsRow, bool, error) {
+					if userID != "user_123" || originalURL != "https://example.com" || forceNew != tc.forceNew {
+						t.Fatalf("create args: user=%q url=%q forceNew=%v", userID, originalURL, forceNew)
+					}
+					return db.GetLinkByIdAndUserWithTagsRow{ID: uuid.New(), Shortcode: "demo", OriginalUrl: originalURL, IsActive: true, Tags: []interface{}{}}, tc.existing, nil
+				}},
+				logger: createTestLogger(),
+			}
+			body := dto.CreateLink{URL: "https://example.com", ForceNew: tc.forceNew}
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/links", nil)
+			ctx := middleware.WithUserID(req.Context(), "user_123")
+			req = req.WithContext(middleware.CtxWithRequestBody(ctx, body))
+			rec := httptest.NewRecorder()
+			handler.CreateLink(rec, req)
+			if rec.Code != tc.status {
+				t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+			}
+			var response struct {
+				Existing bool             `json:"existing"`
+				Data     dto.LinkResponse `json:"data"`
+			}
+			if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+				t.Fatal(err)
+			}
+			if response.Existing != tc.existing || response.Data.Shortcode != "demo" {
+				t.Fatalf("response=%+v", response)
 			}
 		})
 	}

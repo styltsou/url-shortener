@@ -12,6 +12,41 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const lockLinkURL = `-- name: LockLinkURL :exec
+SELECT pg_advisory_xact_lock(hashtextextended($1::TEXT || ':' || $2::TEXT, 0))
+`
+
+type LockLinkURLParams struct {
+	UserID      string `json:"user_id"`
+	OriginalUrl string `json:"original_url"`
+}
+
+func (q *Queries) LockLinkURL(ctx context.Context, arg LockLinkURLParams) error {
+	_, err := q.db.Exec(ctx, lockLinkURL, arg.UserID, arg.OriginalUrl)
+	return err
+}
+
+const getExistingLinkIDByURLAndUser = `-- name: GetExistingLinkIDByURLAndUser :one
+SELECT id FROM links
+WHERE user_id = $1::TEXT AND original_url = $2::TEXT
+  AND deleted_at IS NULL AND is_active = true
+  AND (expires_at IS NULL OR expires_at > NOW())
+ORDER BY created_at DESC, id DESC
+LIMIT 1
+`
+
+type GetExistingLinkIDByURLAndUserParams struct {
+	UserID      string `json:"user_id"`
+	OriginalUrl string `json:"original_url"`
+}
+
+func (q *Queries) GetExistingLinkIDByURLAndUser(ctx context.Context, arg GetExistingLinkIDByURLAndUserParams) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, getExistingLinkIDByURLAndUser, arg.UserID, arg.OriginalUrl)
+	var id uuid.UUID
+	err := row.Scan(&id)
+	return id, err
+}
+
 const countActiveLinks = `-- name: CountActiveLinks :one
 SELECT count(*) FROM links
 WHERE user_id = $1 AND deleted_at IS NULL AND is_active = true
@@ -160,7 +195,7 @@ SELECT
             json_build_object(
                 'id', t.id,
                 'name', t.name,
-                'created_at', t.created_at
+                'created_at', t.created_at AT TIME ZONE 'UTC'
             )
         ) FILTER (WHERE t.id IS NOT NULL),
         '[]'::json
@@ -220,7 +255,7 @@ SELECT
             json_build_object(
                 'id', t.id,
                 'name', t.name,
-                'created_at', t.created_at
+                'created_at', t.created_at AT TIME ZONE 'UTC'
             )
         ) FILTER (WHERE t.id IS NOT NULL),
         '[]'::json
@@ -409,7 +444,7 @@ SELECT
             json_build_object(
                 'id', t.id,
                 'name', t.name,
-                'created_at', t.created_at
+                'created_at', t.created_at AT TIME ZONE 'UTC'
             )
         ) FILTER (WHERE t.id IS NOT NULL),
         '[]'::json

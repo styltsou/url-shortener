@@ -117,6 +117,10 @@ components:
             type: string
             format: uuid
           description: Optional initial tags to attach atomically during link creation
+        force_new:
+          type: boolean
+          default: false
+          description: Create a separate link even if this user already has an active link for the exact URL
     UpdateLinkRequest:
       type: object
       properties:
@@ -204,6 +208,17 @@ components:
           $ref: '#/components/schemas/Link'
       required:
       - data
+    CreateLinkSuccessResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/Link'
+        existing:
+          type: boolean
+          description: True when the returned link already existed; its settings and tags were not changed
+      required:
+      - data
+      - existing
     LinksListSuccessResponse:
       type: object
       properties:
@@ -662,7 +677,7 @@ paths:
       tags:
       - Links
       summary: Create a new shortened link
-      description: Creates a new shortened link for the authenticated user
+      description: Returns an existing active link for the same user and exact URL unless a custom shortcode or force_new is supplied. Existing links are never modified by this request.
       operationId: createLink
       security:
       - BearerAuth: []
@@ -673,12 +688,18 @@ paths:
             schema:
               $ref: '#/components/schemas/CreateLinkRequest'
       responses:
+        '200':
+          description: Existing active link returned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateLinkSuccessResponse'
         '201':
           description: Link created successfully
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/LinkSuccessResponse'
+                $ref: '#/components/schemas/CreateLinkSuccessResponse'
         '400':
           description: Bad request - Invalid URL or request body
           content:
