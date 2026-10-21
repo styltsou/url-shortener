@@ -7,7 +7,7 @@ This guide describes a practical MVP deployment for the URL shortener.
 - **Frontend:** Vercel, Netlify, or any static host that can serve the Vite build.
 - **Backend:** Fly.io, Render, Railway, or a small container host.
 - **Database:** Managed PostgreSQL.
-- **Redis:** Managed Redis. Optional at runtime, but recommended for redirect latency.
+- **Redis:** Managed Redis recommended for redirect latency. `REDIS_URL` is required by configuration; the API degrades safely if that endpoint is temporarily unavailable.
 - **ClickHouse:** Optional for MVP analytics. If unset or unavailable, analytics degrades safely.
 - **Auth:** Clerk production application.
 
@@ -47,12 +47,12 @@ CLICKHOUSE_TABLE_NAME=link4it.click_events
 ```env
 VITE_API_BASE_URL=https://your-api.example
 VITE_CLERK_PUBLISHABLE_KEY=pk_live_...
-VITE_SHORT_DOMAIN=your-short-domain.example
+VITE_SHORT_DOMAIN=https://your-short-domain.example
 ```
 
 ## Deployment Steps
 
-1. Provision PostgreSQL and run migrations from `server/migrations`.
+1. Provision PostgreSQL and run `server/scripts/migrate-up.sh` with `POSTGRES_CONNECTION_STRING` set and `psql` installed on the migration host. Run it again to confirm there are no pending migrations.
 2. Provision Redis and optionally ClickHouse. These can be managed services or separate VPS/Coolify/Dokploy services.
 3. Create a Clerk production app and configure OAuth callback URLs for the frontend domain.
 4. Deploy the backend container from `server/Dockerfile`.
@@ -61,7 +61,7 @@ VITE_SHORT_DOMAIN=your-short-domain.example
    - App domain to frontend host.
    - API domain to backend host.
    - Short-link domain to backend host if separate from the API domain.
-7. Set `BASE_URL` to the public short-link domain.
+7. Set `BASE_URL` and `VITE_SHORT_DOMAIN` to the public HTTPS short-link origin. Both should point to the backend redirect endpoint, including when the frontend uses a different domain.
 8. Set `CORS_ALLOWED_ORIGINS` to the exact frontend origin.
 
 ## Coolify / Dokploy Notes
@@ -88,7 +88,7 @@ The frontend is a Vite static build, so public frontend variables are compiled i
 ```env
 VITE_API_BASE_URL=https://your-api.example
 VITE_CLERK_PUBLISHABLE_KEY=pk_live_...
-VITE_SHORT_DOMAIN=your-short-domain.example
+VITE_SHORT_DOMAIN=https://your-short-domain.example
 ```
 
 Expose frontend port `80`. The frontend image includes an Nginx SPA fallback so client-side routes work after refresh.
@@ -114,7 +114,7 @@ Use these for uptime checks and platform health probes:
 
 Readiness behavior:
 
-- PostgreSQL unavailable: returns `503`.
+- PostgreSQL unavailable or required tables missing: returns `503`.
 - Redis unavailable: returns `200` with `degraded: true` because redirects still work through Postgres.
 
 ## Post-Deploy Smoke Test
@@ -123,15 +123,17 @@ Readiness behavior:
 curl -i https://your-api.example/api/v1/health/live
 curl -i https://your-api.example/api/v1/health/ready
 curl -i https://your-api.example/api/v1/reference
+curl -i https://your-api.example/api/v1/openapi.yaml
 ```
 
 Then use the UI:
 
 1. Sign in with Clerk.
 2. Create a link with a tag.
-3. Visit the short URL and confirm it redirects.
+3. Copy the short URL from the UI. Confirm its host is the backend redirect domain, then visit it and check the destination and click count.
 4. Update the link expiration and clear it again.
-5. Confirm rate-limit and request ID headers are present:
+5. Try a nonexistent shortcode and an expired link; expect `404` and `410` respectively.
+6. Confirm rate-limit and request ID headers are present:
 
 ```bash
 curl -I https://your-api.example/api/v1/health/live
@@ -150,4 +152,4 @@ GitHub Actions runs on pushes to `main` and pull requests:
 
 - `go test ./...` in `server`
 - `pnpm check` in `client`
-- OpenAPI YAML parsing for `docs/openapi/openapi.yaml`
+- OpenAPI schema validation for `docs/openapi/openapi.yaml`

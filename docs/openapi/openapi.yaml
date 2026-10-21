@@ -54,7 +54,9 @@ components:
           description: Unique identifier for the link
         shortcode:
           type: string
+          minLength: 1
           maxLength: 20
+          pattern: '^[A-Za-z0-9_-]+$'
           description: Short code used in the shortened URL
         original_url:
           type: string
@@ -100,7 +102,10 @@ components:
           description: The URL to shorten
         shortcode:
           type: string
-          description: Optional custom shortcode
+          minLength: 1
+          maxLength: 20
+          pattern: '^[A-Za-z0-9_-]+$'
+          description: Optional custom shortcode; api is reserved
         expires_at:
           type: string
           format: date-time
@@ -117,7 +122,9 @@ components:
       properties:
         shortcode:
           type: string
+          minLength: 1
           maxLength: 20
+          pattern: '^[A-Za-z0-9_-]+$'
           description: New shortcode for the link (optional)
         is_active:
           type: boolean
@@ -293,6 +300,7 @@ components:
           - invalid_id
           - link_not_found
           - invalid_url
+          - invalid_shortcode
           - link_expired
           - code_taken
           - tag_not_found
@@ -334,8 +342,78 @@ components:
       required:
       - status
       - service
+    ClicksOverTime:
+      type: object
+      required: [date, clicks]
+      properties:
+        date:
+          type: string
+          format: date-time
+        clicks:
+          type: integer
+          minimum: 0
+    LinkAnalyticsResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [total_clicks, clicks_over_time, top_referrers, top_user_agents]
+          properties:
+            total_clicks:
+              type: integer
+              minimum: 0
+            clicks_over_time:
+              type: array
+              items:
+                $ref: '#/components/schemas/ClicksOverTime'
+            top_referrers:
+              type: array
+              items:
+                type: object
+                required: [referrer, clicks]
+                properties:
+                  referrer:
+                    type: string
+                  clicks:
+                    type: integer
+            top_user_agents:
+              type: array
+              items:
+                type: object
+                required: [user_agent, clicks]
+                properties:
+                  user_agent:
+                    type: string
+                  clicks:
+                    type: integer
+    DashboardResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [total_links, active_links, total_clicks, recent_links]
+          properties:
+            total_links:
+              type: integer
+              minimum: 0
+            active_links:
+              type: integer
+              minimum: 0
+            total_clicks:
+              type: integer
+              minimum: 0
+            clicks_over_time:
+              type: array
+              items:
+                $ref: '#/components/schemas/ClicksOverTime'
+            recent_links:
+              type: array
+              items:
+                $ref: '#/components/schemas/Link'
 paths:
-  /{code}:
+  /{shortcode}:
     get:
       tags:
       - Public
@@ -343,7 +421,7 @@ paths:
       description: Public endpoint that redirects to the original URL associated with the shortcode. Does not require authentication.
       operationId: redirect
       parameters:
-      - name: code
+      - name: shortcode
         in: path
         required: true
         schema:
@@ -376,12 +454,24 @@ paths:
                 format: uri
               description: The original URL to redirect to
         '404':
-          description: Link not found, expired, or inactive
+          description: Link not found or inactive
           content:
             text/html:
               schema:
                 type: string
                 description: HTML error page
+        '410':
+          description: Link expired
+          content:
+            text/html:
+              schema:
+                type: string
+        '503':
+          description: Redirect lookup temporarily unavailable
+          content:
+            text/html:
+              schema:
+                type: string
   /api/v1/health:
     get:
       tags:
@@ -450,6 +540,49 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: OpenAPI document is unavailable
+  /api/v1/openapi.yaml:
+    get:
+      tags:
+      - Public
+      summary: OpenAPI document
+      operationId: getOpenAPIDocument
+      responses:
+        '200':
+          description: OpenAPI YAML document
+          content:
+            application/yaml:
+              schema:
+                type: string
+        '503':
+          description: OpenAPI document is unavailable
+  /api/v1/dashboard:
+    get:
+      tags: [Links]
+      summary: Dashboard statistics for the signed-in user
+      operationId: getDashboard
+      security:
+      - BearerAuth: []
+      responses:
+        '200':
+          description: Link counts, recent links and available click analytics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardResponse'
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /api/v1/links:
     get:
       tags:
@@ -507,6 +640,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/PaginatedLinksResponse'
+        '400':
+          description: Invalid filter or pagination parameter
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '401':
           description: Unauthorized - Missing or invalid authentication token
           content:
@@ -548,6 +687,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '401':
           description: Unauthorized - Missing or invalid authentication token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Custom shortcode already in use
           content:
             application/json:
               schema:
@@ -596,6 +741,87 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '500':
           description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/links/{shortcode}/analytics:
+    get:
+      tags: [Links]
+      summary: Click analytics for a link owned by the signed-in user
+      operationId: getLinkAnalytics
+      security:
+      - BearerAuth: []
+      parameters:
+      - name: shortcode
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Click counts and breakdowns; zero values when analytics is unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LinkAnalyticsResponse'
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Link not found for this user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/links/{shortcode}/qrcode:
+    get:
+      tags: [Links]
+      summary: Generate a PNG QR code for a short URL
+      description: Generates a QR code from the shortcode without looking up a link.
+      operationId: getQRCode
+      security:
+      - BearerAuth: []
+      parameters:
+      - name: shortcode
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: size
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 64
+          maximum: 1024
+          default: 256
+        description: Out-of-range or invalid values use the default size.
+      responses:
+        '200':
+          description: PNG QR code
+          content:
+            image/png:
+              schema:
+                type: string
+                format: binary
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: QR generation failed
           content:
             application/json:
               schema:

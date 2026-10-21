@@ -1,7 +1,10 @@
+# syntax=docker/dockerfile:1
 FROM node:22-alpine AS builder
 WORKDIR /app
 COPY client/package.json client/pnpm-lock.yaml ./
-RUN corepack enable && corepack prepare pnpm@10.28.0 --activate && pnpm install --frozen-lockfile --ignore-scripts
+RUN --mount=type=secret,id=ca_bundle \
+  if [ -f /run/secrets/ca_bundle ]; then export NODE_EXTRA_CA_CERTS=/run/secrets/ca_bundle; fi; \
+  corepack enable && corepack prepare pnpm@10.28.0 --activate && pnpm install --frozen-lockfile --ignore-scripts
 COPY client/ .
 
 ARG VITE_CLERK_PUBLISHABLE_KEY

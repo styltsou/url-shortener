@@ -1,6 +1,6 @@
 # link4.it — URL Shortener
 
-A URL shortener MVP with analytics, tags, and QR code generation. Built with Go and React.
+A Go and React URL shortener MVP with tags, QR codes, and optional click analytics. This repository is being prepared for its first release; no public deployment is listed yet.
 
 ## Stack
 
@@ -19,21 +19,39 @@ A URL shortener MVP with analytics, tags, and QR code generation. Built with Go 
 - Request IDs, structured production logging, security headers, rate limiting, health checks
 - Dark/light mode, responsive UI
 
+## Architecture
+
+```mermaid
+flowchart LR
+    B[Browser / React] -->|Clerk token| A[Go API]
+    V[Short URL visitor] -->|HTTP redirect| A
+    A --> P[(PostgreSQL)]
+    A -.->|redirect cache| R[(Redis)]
+    A -.->|click events| C[(ClickHouse)]
+```
+
+PostgreSQL stores links and tags. Redis speeds up redirects; the API uses PostgreSQL if Redis is unavailable. ClickHouse powers click analytics; links and redirects still work if it is unavailable. Clerk is required for signed-in management routes.
+
 ## Quick Start
 
+Prerequisites: Docker with Compose, the PostgreSQL `psql` CLI, and a Clerk development application with its secret and publishable keys. Add `http://localhost:5173` to the Clerk application's allowed local origins and configure a sign-in method.
+
 ```bash
-# Clone and enter the project
-git clone <repo-url> && cd url-shortener
+# From the repository root
 
 # Set Clerk API keys (get them from https://dashboard.clerk.com)
 export CLERK_SECRET_KEY=sk_test_...
 export VITE_CLERK_PUBLISHABLE_KEY=pk_test_...
 
-# Start the local development stack
+# Start PostgreSQL, apply migrations, then start the app
+docker compose up postgres -d
+export POSTGRES_CONNECTION_STRING='postgres://postgres:postgres@localhost:5432/urlshortener?sslmode=disable'
+(cd server && ./scripts/migrate-up.sh)
 docker compose up --build
 ```
 
 Open http://localhost:5173, sign in with Google/GitHub, and start shortening URLs.
+The app supports whichever sign-in methods you enabled in Clerk. The local redirect endpoint is http://localhost:8080.
 
 ## Project Structure
 
@@ -59,7 +77,7 @@ See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for MVP deployment instructions.
 | `GET` | `/api/v1/links/{shortcode}/analytics` | Analytics |
 | `GET` | `/api/v1/links/{shortcode}/qrcode` | QR code |
 
-The API reference page is at http://localhost:8080/api/v1/reference; loading its OpenAPI document in a running stack still needs verification.
+The API reference is at http://localhost:8080/api/v1/reference and its OpenAPI document is at http://localhost:8080/api/v1/openapi.yaml.
 
 Operational headers:
 
@@ -89,17 +107,19 @@ Use the repository root as the Docker build context for both services.
 # Start dependencies
 docker compose up postgres redis clickhouse -d
 
-# Run server (with hot reload)
-cd server && cp .env.example .env
-task run
+# Apply database migrations, then run the server
+export POSTGRES_CONNECTION_STRING='postgres://postgres:postgres@localhost:5432/urlshortener?sslmode=disable'
+export REDIS_URL='localhost:6379'
+export CLERK_SECRET_KEY='sk_test_...'
+cd server && ./scripts/migrate-up.sh && go run ./cmd/main.go
 
-# Run client
-cd client && pnpm install && pnpm dev
+# In another terminal, run the client
+cd client && cp .env.example .env && pnpm install && pnpm dev
 ```
 
 ## CI
 
-GitHub Actions runs backend tests, frontend checks, tests and builds, and OpenAPI YAML validation on pushes to `main` and pull requests.
+GitHub Actions runs backend tests, frontend checks, tests and builds, and OpenAPI schema validation on pushes to `main` and pull requests. PostgreSQL and Redis integration tests are opt-in locally through `TEST_DATABASE_URL` and `TEST_REDIS_ADDR`.
 
 ## License
 

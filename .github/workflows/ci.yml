@@ -10,6 +10,25 @@ jobs:
   backend:
     name: Backend
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: urlshortener
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 5s --health-retries 5
     defaults:
       run:
         working-directory: server
@@ -24,7 +43,13 @@ jobs:
           cache-dependency-path: server/go.sum
 
       - name: Test
+        env:
+          TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/urlshortener?sslmode=disable
+          TEST_REDIS_ADDR: localhost:6379
         run: go test ./...
+
+      - name: Vet
+        run: go vet ./...
 
   frontend:
     name: Frontend
@@ -75,13 +100,8 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install YAML parser
-        run: python -m pip install pyyaml
+      - name: Install OpenAPI validator
+        run: python -m pip install openapi-spec-validator==0.7.2
 
-      - name: Validate OpenAPI YAML
-        run: |
-          python - <<'PY'
-          import yaml
-          with open("docs/openapi/openapi.yaml", "r", encoding="utf-8") as f:
-              yaml.safe_load(f)
-          PY
+      - name: Validate OpenAPI document
+        run: openapi-spec-validator docs/openapi/openapi.yaml
