@@ -57,6 +57,12 @@ jobs:
       - name: Check
         run: pnpm check
 
+      - name: Test
+        run: pnpm test
+
+      - name: Build
+        run: pnpm build
+
   docs:
     name: Docs
     runs-on: ubuntu-latest

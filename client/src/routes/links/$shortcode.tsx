@@ -2,7 +2,8 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useAuth } from "@clerk/clerk-react";
 import { Navigate } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
-import { useLinks } from "@/hooks/use-links";
+import { useLink } from "@/hooks/use-links";
+import { ApiError } from "@/lib/api-client";
 import { useAnalytics } from "@/hooks/use-analytics";
 import { processReferrersData } from "@/lib/referrers";
 import { LinkHeader } from "@/components/link/link-header";
@@ -23,11 +24,8 @@ function LinkDetailPage() {
 	const { shortcode } = Route.useParams();
 	const navigate = useNavigate();
 	const { isSignedIn, isLoaded } = useAuth();
-	const { data: linksData, isLoading: isLoadingLinks } = useLinks();
+	const { data: url, isLoading: isLoadingLinks, error } = useLink(shortcode);
 	const { data: analyticsData, isLoading: isLoadingAnalytics } = useAnalytics(shortcode);
-	const urls = linksData?.urls ?? [];
-
-	const url = urls.find((u) => u.shortCode === shortcode);
 
 	const clicksData = (analyticsData?.clicks_over_time ?? []).map((d) => ({
 		name: new Date(d.date).toLocaleDateString("en-US", { weekday: "short" }),
@@ -60,7 +58,11 @@ function LinkDetailPage() {
 		return (
 			<main className="p-4 sm:p-6">
 				<div className="max-w-6xl mx-auto text-center py-20">
-					<h1 className="text-3xl font-bold mb-4">Link not found</h1>
+					<h1 className="text-3xl font-bold mb-4">
+						{error && (!(error instanceof ApiError) || error.status !== 404)
+							? "Unable to load link"
+							: "Link not found"}
+					</h1>
 					<Button onClick={() => navigate({ to: "/links" })}>Back to links</Button>
 				</div>
 			</main>

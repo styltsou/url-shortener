@@ -80,18 +80,21 @@ export function useLinks(options?: UseLinksOptions) {
 	});
 }
 
-// Fetch single link by ID
-export function useLink(id: string) {
+// The GET endpoint identifies links by shortcode; mutations use the UUID.
+export function useLink(shortcode: string) {
 	const { getToken } = useAuth();
 
 	return useQuery({
-		queryKey: linkKeys.detail(id),
+		queryKey: linkKeys.detail(shortcode),
 		queryFn: async () => {
 			const token = await getToken();
-			const response = await apiClient.get<{ data: Link }>(`/api/v1/links/${id}`, token);
+			const response = await apiClient.get<{ data: Link }>(
+				`/api/v1/links/${encodeURIComponent(shortcode)}`,
+				token,
+			);
 			return linkToUrl(response.data);
 		},
-		enabled: !!id,
+		enabled: !!shortcode,
 	});
 }
 
@@ -128,11 +131,10 @@ export function useUpdateLink() {
 			const response = await apiClient.patch<{ data: Link }>(`/api/v1/links/${id}`, data, token);
 			return linkToUrl(response.data);
 		},
-		onSuccess: (_, variables) => {
+		onSuccess: () => {
 			queryClient.invalidateQueries({ queryKey: linkKeys.lists() });
-			queryClient.invalidateQueries({
-				queryKey: linkKeys.detail(variables.id),
-			});
+			// A changed shortcode also leaves the old detail key behind.
+			queryClient.invalidateQueries({ queryKey: linkKeys.details() });
 			toast.success("Link updated successfully");
 		},
 		onError: (error) => {
