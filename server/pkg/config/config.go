@@ -44,6 +44,7 @@ type Config struct {
 	ServerIdleTimeout        int      `mapstructure:"SERVER_IDLE_TIMEOUT" validate:"min=1"`
 	RateLimitRequests        int      `mapstructure:"RATE_LIMIT_REQUESTS" validate:"omitempty,min=0"`
 	RateLimitWindowSeconds   int      `mapstructure:"RATE_LIMIT_WINDOW_SECONDS" validate:"omitempty,min=1"`
+	TrustedProxyCIDRs        []string `mapstructure:"TRUSTED_PROXY_CIDRS"`
 }
 
 var cfg *Config
@@ -163,6 +164,7 @@ func Load() (*Config, error) {
 	cfg.CORSAllowedMethods = parseCommaSeparated(v.GetString("CORS_ALLOWED_METHODS"))
 	cfg.CORSAllowedHeaders = parseCommaSeparated(v.GetString("CORS_ALLOWED_HEADERS"))
 	cfg.CORSExposedHeaders = parseCommaSeparated(v.GetString("CORS_EXPOSED_HEADERS"))
+	cfg.TrustedProxyCIDRs = parseCommaSeparated(v.GetString("TRUSTED_PROXY_CIDRS"))
 
 	if err := validateConfig(cfg); err != nil {
 		return cfg, fmt.Errorf("Config validation failed: %w", err)

@@ -4,6 +4,7 @@ package server
 import (
 	"context"
 	"fmt"
+	"net/netip"
 	"strings"
 	"time"
 
@@ -70,6 +71,14 @@ type Server struct {
 // Logger and config should be initialized in the caller (main.go)
 func New(config *config.Config, log logger.Logger) (*Server, error) {
 	clerk.SetKey(config.ClerkSecretKey)
+	trustedProxies := make([]netip.Prefix, 0, len(config.TrustedProxyCIDRs))
+	for _, cidr := range config.TrustedProxyCIDRs {
+		prefix, err := netip.ParsePrefix(cidr)
+		if err != nil {
+			return nil, fmt.Errorf("invalid TRUSTED_PROXY_CIDRS entry %q: %w", cidr, err)
+		}
+		trustedProxies = append(trustedProxies, prefix.Masked())
+	}
 
 	s := &Server{
 		Context: context.Background(),
@@ -94,9 +103,9 @@ func New(config *config.Config, log logger.Logger) (*Server, error) {
 		Password:     config.RedisPassword,
 		DB:           config.RedisDB,
 		MaxRetries:   config.RedisMaxRetries,
-		DialTimeout:  time.Duration(config.RedisDialTimeout) * time.Second,     //nolint:gosec // small int value, safe on all platforms
-		ReadTimeout:  time.Duration(config.RedisReadTimeout) * time.Second,     //nolint:gosec
-		WriteTimeout: time.Duration(config.RedisWriteTimeout) * time.Second,    //nolint:gosec
+		DialTimeout:  time.Duration(config.RedisDialTimeout) * time.Second,  //nolint:gosec // small int value, safe on all platforms
+		ReadTimeout:  time.Duration(config.RedisReadTimeout) * time.Second,  //nolint:gosec
+		WriteTimeout: time.Duration(config.RedisWriteTimeout) * time.Second, //nolint:gosec
 	})
 
 	// Ping Redis with a timeout to avoid hanging
@@ -123,10 +132,10 @@ func New(config *config.Config, log logger.Logger) (*Server, error) {
 		URL:             config.ClickhouseURL,
 		Username:        config.ClickhouseUsername,
 		Password:        config.ClickhousePassword,
-		DialTimeout:     time.Duration(config.ClickhouseDialTimeout) * time.Second,     //nolint:gosec
+		DialTimeout:     time.Duration(config.ClickhouseDialTimeout) * time.Second, //nolint:gosec
 		MaxOpenConns:    config.ClickhouseMaxOpenConns,
 		MaxIdleConns:    config.ClickhouseMaxIdleConns,
-		ConnMaxLifetime: time.Duration(config.ClickhouseConnMaxLifeMin) * time.Minute,   //nolint:gosec
+		ConnMaxLifetime: time.Duration(config.ClickhouseConnMaxLifeMin) * time.Minute, //nolint:gosec
 		TableName:       config.ClickhouseTableName,
 	}, s.Logger)
 	if analyticsErr != nil {
@@ -155,8 +164,9 @@ func New(config *config.Config, log logger.Logger) (*Server, error) {
 	s.Router.Use(middleware.RequestLogger(s.Logger))
 	s.Router.Use(chimw.Recoverer)
 	s.Router.Use(middleware.RateLimit(middleware.RateLimitConfig{
-		Requests: config.RateLimitRequests,
-		Window:   time.Duration(config.RateLimitWindowSeconds) * time.Second, //nolint:gosec
+		Requests:       config.RateLimitRequests,
+		Window:         time.Duration(config.RateLimitWindowSeconds) * time.Second, //nolint:gosec
+		TrustedProxies: trustedProxies,
 	}))
 
 	healthHandler := handlers.NewHealthHandler(s.Pool, s.RedisClient, s.Logger)

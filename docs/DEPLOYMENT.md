@@ -27,6 +27,7 @@ CORS_ALLOWED_ORIGINS=https://your-frontend.example
 CORS_EXPOSED_HEADERS=Link,X-Request-ID,X-RateLimit-Limit,X-RateLimit-Remaining,X-RateLimit-Reset,Retry-After
 RATE_LIMIT_REQUESTS=120
 RATE_LIMIT_WINDOW_SECONDS=60
+TRUSTED_PROXY_CIDRS= # comma-separated CIDRs of proxies directly connecting to the API
 SERVER_READ_TIMEOUT=15
 SERVER_WRITE_TIMEOUT=15
 SERVER_IDLE_TIMEOUT=60

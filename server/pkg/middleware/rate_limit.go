@@ -3,6 +3,7 @@ package middleware
 import (
 	"net"
 	"net/http"
+	"net/netip"
 	"strconv"
 	"strings"
 	"sync"
@@ -14,8 +15,9 @@ import (
 )
 
 type RateLimitConfig struct {
-	Requests int
-	Window   time.Duration
+	Requests       int
+	Window         time.Duration
+	TrustedProxies []netip.Prefix
 }
 
 type rateLimitBucket struct {
@@ -40,7 +42,13 @@ func RateLimit(cfg RateLimitConfig) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			now := time.Now()
-			key := clientIP(r)
+			key := clientIP(r, cfg.TrustedProxies)
+			// Public redirects must not exhaust the management API's bucket.
+			if strings.HasPrefix(r.URL.Path, "/api/v1/") {
+				key = "api:" + key
+			} else {
+				key = "redirect:" + key
+			}
 
 			mu.Lock()
 			if now.Sub(lastCleanup) > cfg.Window {
@@ -89,19 +97,48 @@ func RateLimit(cfg RateLimitConfig) func(http.Handler) http.Handler {
 	}
 }
 
-func clientIP(r *http.Request) string {
-	if forwardedFor := r.Header.Get("X-Forwarded-For"); forwardedFor != "" {
-		parts := strings.Split(forwardedFor, ",")
-		if ip := strings.TrimSpace(parts[0]); ip != "" {
-			return ip
+func clientIP(r *http.Request, trustedProxies []netip.Prefix) string {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		host = r.RemoteAddr
+	}
+	peer, err := netip.ParseAddr(host)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	peer = peer.Unmap()
+	if !isTrustedProxy(peer, trustedProxies) {
+		return peer.String()
+	}
+
+	forwarded := strings.Join(r.Header.Values("X-Forwarded-For"), ",")
+	if forwarded != "" {
+		// Walk from the connection toward the client, stopping at the first
+		// untrusted hop. The leftmost value is not automatically trustworthy.
+		parts := strings.Split(forwarded, ",")
+		current := peer
+		for i := len(parts) - 1; i >= 0 && isTrustedProxy(current, trustedProxies); i-- {
+			next, parseErr := netip.ParseAddr(strings.TrimSpace(parts[i]))
+			if parseErr != nil {
+				return peer.String()
+			}
+			current = next.Unmap()
 		}
+		return current.String()
 	}
 	if realIP := strings.TrimSpace(r.Header.Get("X-Real-IP")); realIP != "" {
-		return realIP
+		if ip, parseErr := netip.ParseAddr(realIP); parseErr == nil {
+			return ip.Unmap().String()
+		}
 	}
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err == nil && host != "" {
-		return host
+	return peer.String()
+}
+
+func isTrustedProxy(ip netip.Addr, proxies []netip.Prefix) bool {
+	for _, proxy := range proxies {
+		if proxy.Contains(ip) {
+			return true
+		}
 	}
-	return r.RemoteAddr
+	return false
 }
