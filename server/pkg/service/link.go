@@ -117,6 +117,7 @@ func base62EncodeUint64(num uint64) string {
 
 type LinkQueries interface {
 	TryCreateLink(ctx context.Context, arg db.TryCreateLinkParams) (db.TryCreateLinkRow, error)
+	ShortcodeExists(ctx context.Context, shortcode string) (bool, error)
 	GetLinkForRedirect(ctx context.Context, shortcode string) (db.GetLinkForRedirectRow, error)
 	ListUserLinks(ctx context.Context, arg db.ListUserLinksParams) ([]db.ListUserLinksRow, error)
 	CountUserLinks(ctx context.Context, arg db.CountUserLinksParams) (int64, error)
@@ -133,6 +134,19 @@ type LinkQueries interface {
 	GetRecentLinks(ctx context.Context, arg db.GetRecentLinksParams) ([]db.GetRecentLinksRow, error)
 	CountActiveLinks(ctx context.Context, userID string) (int64, error)
 	ListUserLinkIDs(ctx context.Context, userID string) ([]uuid.UUID, error)
+}
+
+// ShortcodeAvailable checks the same global namespace used by link creation.
+// The result is advisory; the unique index decides the outcome of an insert.
+func (s *LinkService) ShortcodeAvailable(ctx context.Context, shortcode string) (bool, error) {
+	if !validShortcode(shortcode) {
+		return false, apperrors.InvalidShortcode
+	}
+	exists, err := s.queries.ShortcodeExists(ctx, shortcode)
+	if err != nil {
+		return false, fmt.Errorf("failed to check shortcode availability: %w", err)
+	}
+	return !exists, nil
 }
 
 type TxBeginner interface {

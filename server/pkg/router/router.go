@@ -89,6 +89,7 @@ func New(linkH *handlers.LinkHandler, tagH *handlers.TagHandler, healthH *handle
 
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Use(mw.RequireAuth(logger))
+		r.Get("/shortcodes/availability", linkH.CheckShortcodeAvailability)
 
 		r.Route("/links", func(r chi.Router) {
 			r.With(mw.RequestValidator[dto.CreateLink](logger)).Post("/", linkH.CreateLink)

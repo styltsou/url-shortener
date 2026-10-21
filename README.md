@@ -74,6 +74,7 @@ See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for MVP deployment instructions.
 | `GET` | `/api/v1/health/ready` | Dependency readiness check |
 | `POST` | `/api/v1/links` | Create link |
 | `GET` | `/api/v1/links` | List links |
+| `GET` | `/api/v1/shortcodes/availability?shortcode={code}` | Check custom alias availability |
 | `GET` | `/api/v1/links/{shortcode}/analytics` | Analytics |
 | `GET` | `/api/v1/links/{shortcode}/qrcode` | QR code |
 

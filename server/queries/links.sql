@@ -5,6 +5,11 @@ VALUES (@shortcode::VARCHAR(20), @original_url::TEXT, @user_id::TEXT, @expires_a
 ON CONFLICT (shortcode) WHERE deleted_at IS NULL DO NOTHING
 RETURNING id, shortcode, original_url, expires_at, is_active, created_at, updated_at;
 
+-- name: ShortcodeExists :one
+SELECT EXISTS (
+    SELECT 1 FROM links WHERE shortcode = $1 AND deleted_at IS NULL
+);
+
 
 -- name: GetLinkForRedirect :one
 SELECT id, original_url, expires_at

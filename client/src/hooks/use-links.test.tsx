@@ -4,7 +4,14 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "@/lib/api-client";
-import { useLink, useLinks, useCreateLink, useDeleteLink, linkKeys } from "./use-links";
+import {
+	useLink,
+	useLinks,
+	useCreateLink,
+	useDeleteLink,
+	useShortcodeAvailability,
+	linkKeys,
+} from "./use-links";
 import { useDashboard, dashboardKeys } from "./use-dashboard";
 
 const { get, post, remove, auth } = vi.hoisted(() => ({
@@ -165,5 +172,15 @@ describe("useLink shortcode contract", () => {
 			link: { id: "link-id", shortCode: "abc123" },
 		});
 		expect(client.getQueryState(page)?.isInvalidated).toBe(false);
+	});
+
+	it("checks an encoded custom alias with the signed-in user's token", async () => {
+		get.mockResolvedValue({ data: { available: false } });
+		const { result } = renderHook(() => useShortcodeAvailability("my_alias"), { wrapper });
+		await waitFor(() => expect(result.current.data).toBe(false));
+		expect(get).toHaveBeenCalledWith(
+			"/api/v1/shortcodes/availability?shortcode=my_alias",
+			"test-token",
+		);
 	});
 });

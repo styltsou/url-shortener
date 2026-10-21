@@ -219,6 +219,18 @@ components:
       required:
       - data
       - existing
+    ShortcodeAvailabilityResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            available:
+              type: boolean
+          required:
+          - available
+      required:
+      - data
     LinksListSuccessResponse:
       type: object
       properties:
@@ -714,6 +726,50 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '409':
           description: Custom shortcode already in use
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/shortcodes/availability:
+    get:
+      tags:
+      - Links
+      summary: Check custom shortcode availability
+      description: Advisory check against all non-deleted links. The create request may still conflict if another request claims the shortcode.
+      operationId: checkShortcodeAvailability
+      security:
+      - BearerAuth: []
+      parameters:
+      - name: shortcode
+        in: query
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 20
+          pattern: '^[A-Za-z0-9_-]+$'
+        description: Custom shortcode to check; api is reserved
+      responses:
+        '200':
+          description: Current availability
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ShortcodeAvailabilityResponse'
+        '400':
+          description: Invalid shortcode
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
           content:
             application/json:
               schema:

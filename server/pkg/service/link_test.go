@@ -21,6 +21,7 @@ import (
 
 // mockQueries is a mock implementation of the database queries
 type mockQueries struct {
+	ShortcodeExistsFunc               func(ctx context.Context, shortcode string) (bool, error)
 	TryCreateLinkFunc                 func(ctx context.Context, arg db.TryCreateLinkParams) (db.TryCreateLinkRow, error)
 	ListUserLinksFunc                 func(ctx context.Context, arg db.ListUserLinksParams) ([]db.ListUserLinksRow, error)
 	CountUserLinksFunc                func(ctx context.Context, arg db.CountUserLinksParams) (int64, error)
@@ -38,6 +39,13 @@ type mockQueries struct {
 	GetRecentLinksFunc                func(ctx context.Context, arg db.GetRecentLinksParams) ([]db.GetRecentLinksRow, error)
 	CountActiveLinksFunc              func(ctx context.Context, userID string) (int64, error)
 	ListUserLinkIDsFunc               func(ctx context.Context, userID string) ([]uuid.UUID, error)
+}
+
+func (m *mockQueries) ShortcodeExists(ctx context.Context, shortcode string) (bool, error) {
+	if m.ShortcodeExistsFunc != nil {
+		return m.ShortcodeExistsFunc(ctx, shortcode)
+	}
+	return false, errors.New("not implemented")
 }
 
 func (m *mockQueries) TryCreateLink(ctx context.Context, arg db.TryCreateLinkParams) (db.TryCreateLinkRow, error) {

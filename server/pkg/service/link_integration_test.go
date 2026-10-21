@@ -364,3 +364,44 @@ func TestPostgresCreateOrFindShortLink(t *testing.T) {
 		t.Fatalf("created %d links for concurrent requests", created)
 	}
 }
+
+func TestPostgresShortcodeAvailability(t *testing.T) {
+	pool := integrationPool(t)
+	ctx := context.Background()
+	links := NewLinkService(pool, db.New(pool), nil, nil, createTestLogger())
+	for _, code := range []string{"", "api", "bad alias", "123456789012345678901"} {
+		if _, err := links.ShortcodeAvailable(ctx, code); !errors.Is(err, apperrors.InvalidShortcode) {
+			t.Fatalf("invalid alias %q: %v", code, err)
+		}
+	}
+	code := "campaign"
+	if available, err := links.ShortcodeAvailable(ctx, code); err != nil || !available {
+		t.Fatalf("new alias: available=%v err=%v", available, err)
+	}
+	link, err := links.CreateShortLink(ctx, "user-a", "https://example.com", &code, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if available, err := links.ShortcodeAvailable(ctx, code); err != nil || available {
+		t.Fatalf("occupied alias: available=%v err=%v", available, err)
+	}
+	active := false
+	if _, err := links.UpdateLink(ctx, "user-a", link.ID, nil, &active, false, nil); err != nil {
+		t.Fatal(err)
+	}
+	if available, err := links.ShortcodeAvailable(ctx, code); err != nil || available {
+		t.Fatalf("inactive link released alias: available=%v err=%v", available, err)
+	}
+	if _, err := pool.Exec(ctx, "UPDATE links SET expires_at=NOW() - INTERVAL '1 second' WHERE id=$1", link.ID); err != nil {
+		t.Fatal(err)
+	}
+	if available, err := links.ShortcodeAvailable(ctx, code); err != nil || available {
+		t.Fatalf("expired link released alias: available=%v err=%v", available, err)
+	}
+	if _, err := links.DeleteLink(ctx, "user-a", link.ID); err != nil {
+		t.Fatal(err)
+	}
+	if available, err := links.ShortcodeAvailable(ctx, code); err != nil || !available {
+		t.Fatalf("deleted link kept alias: available=%v err=%v", available, err)
+	}
+}

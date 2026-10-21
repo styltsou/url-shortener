@@ -35,6 +35,7 @@ import (
 // LinkServiceInterface defines the service methods needed by LinkHandler
 type LinkService interface {
 	GetOriginalURL(ctx context.Context, code string) (db.GetLinkForRedirectRow, error)
+	ShortcodeAvailable(ctx context.Context, shortcode string) (bool, error)
 	CreateShortLink(ctx context.Context, userID string, originalURL string, customShortcode *string, expiresAt *time.Time) (db.TryCreateLinkRow, error)
 	CreateShortLinkWithTags(ctx context.Context, userID string, originalURL string, customShortcode *string, expiresAt *time.Time, tagIDs []uuid.UUID) (db.GetLinkByIdAndUserWithTagsRow, error)
 	CreateOrFindShortLinkWithTags(ctx context.Context, userID string, originalURL string, customShortcode *string, expiresAt *time.Time, tagIDs []uuid.UUID, forceNew bool) (db.GetLinkByIdAndUserWithTagsRow, bool, error)
@@ -47,6 +48,18 @@ type LinkService interface {
 	RecordClick(ctx context.Context, linkID uuid.UUID, ip, userAgent, referrer string)
 	GetLinkAnalytics(ctx context.Context, userID string, shortcode string) (*analytics.LinkAnalytics, error)
 	GetDashboardStats(ctx context.Context, userID string) (*service.DashboardStats, error)
+}
+
+// CheckShortcodeAvailability: GET /api/v1/shortcodes/availability?shortcode=...
+func (h *LinkHandler) CheckShortcodeAvailability(w http.ResponseWriter, r *http.Request) {
+	available, err := h.LinkService.ShortcodeAvailable(r.Context(), r.URL.Query().Get("shortcode"))
+	if err != nil {
+		h.handleError(w, r, err)
+		return
+	}
+	render.JSON(w, r, dto.SuccessResponse[dto.ShortcodeAvailability]{
+		Data: dto.ShortcodeAvailability{Available: available},
+	})
 }
 
 type LinkHandler struct {

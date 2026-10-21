@@ -26,6 +26,10 @@ type CreateLinkResponse struct {
 	Existing bool         `json:"existing"`
 }
 
+type ShortcodeAvailability struct {
+	Available bool `json:"available"`
+}
+
 func (dto *CreateLink) Validate() error {
 	if dto.ExpiresAt != nil && dto.ExpiresAt.Before(time.Now()) {
 		return errors.New("expires_at must be set to a future time")

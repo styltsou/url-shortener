@@ -12,6 +12,19 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const shortcodeExists = `-- name: ShortcodeExists :one
+SELECT EXISTS (
+    SELECT 1 FROM links WHERE shortcode = $1 AND deleted_at IS NULL
+)
+`
+
+func (q *Queries) ShortcodeExists(ctx context.Context, shortcode string) (bool, error) {
+	row := q.db.QueryRow(ctx, shortcodeExists, shortcode)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
 const lockLinkURL = `-- name: LockLinkURL :exec
 SELECT pg_advisory_xact_lock(hashtextextended($1::TEXT || ':' || $2::TEXT, 0))
 `

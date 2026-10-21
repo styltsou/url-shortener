@@ -104,6 +104,26 @@ export function useLink(shortcode: string) {
 	});
 }
 
+// Advisory availability check for the custom alias field
+export function useShortcodeAvailability(shortcode: string) {
+	const { getToken, isLoaded, isSignedIn, userId } = useAuth();
+	const authUserId = isLoaded && isSignedIn ? userId : null;
+
+	return useQuery({
+		queryKey: [...linkKeys.all, "availability", authUserId, shortcode],
+		enabled: !!authUserId && !!shortcode,
+		retry: false,
+		queryFn: async () => {
+			const token = await getToken();
+			const response = await apiClient.get<{ data: { available: boolean } }>(
+				`/api/v1/shortcodes/availability?shortcode=${encodeURIComponent(shortcode)}`,
+				token,
+			);
+			return response.data.available;
+		},
+	});
+}
+
 // Create link mutation
 export function useCreateLink() {
 	const { getToken } = useAuth();

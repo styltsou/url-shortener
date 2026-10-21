@@ -13,10 +13,11 @@ import { InputGroup, InputGroupText, InputGroupInput } from "@/components/ui/inp
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import { formatDate } from "@/lib/date-utils";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { SHORT_DOMAIN } from "@/lib/env";
 import { TagCombobox } from "@/components/link/tag-combobox";
 import { useTags, useCreateTag } from "@/hooks/use-tags";
+import { useShortcodeAvailability } from "@/hooks/use-links";
 import { toast } from "sonner";
 import type { Tag } from "@/types/url";
 import type { Url } from "@/types/url";
@@ -49,6 +50,7 @@ export function NewUrlForm({ onShorten, isLoading }: NewUrlFormProps) {
 	const [duplicate, setDuplicate] = useState<{ link: Url; request: CreateLinkRequest } | null>(
 		null,
 	);
+	const [debouncedCode, setDebouncedCode] = useState("");
 	const [formState, setFormState] = useState<FormState>({
 		originalUrl: "",
 		customCode: "",
@@ -60,6 +62,31 @@ export function NewUrlForm({ onShorten, isLoading }: NewUrlFormProps) {
 
 	const { data: availableTags = [], isLoading: isLoadingTags } = useTags();
 	const createTag = useCreateTag();
+	const customCode = formState.customCode;
+	const aliasValid = /^[A-Za-z0-9_-]{1,20}$/.test(customCode) && customCode.toLowerCase() !== "api";
+	useEffect(() => {
+		const timeout = window.setTimeout(() => setDebouncedCode(customCode), 350);
+		return () => window.clearTimeout(timeout);
+	}, [customCode]);
+	const availability = useShortcodeAvailability(
+		aliasValid && debouncedCode === customCode ? debouncedCode : "",
+	);
+	const aliasTaken =
+		!!customCode && aliasValid && availability.data === false && !availability.isFetching;
+	let aliasMessage = "Optional. Leave blank for an automatic alias.";
+	if (customCode) {
+		if (!aliasValid) {
+			aliasMessage = "Use 1–20 letters, numbers, - or _. The alias api is reserved.";
+		} else if (availability.isError) {
+			aliasMessage = "Could not check availability. You can still try creating the link.";
+		} else if (availability.isFetching || availability.data === undefined) {
+			aliasMessage = "Checking availability...";
+		} else {
+			aliasMessage = availability.data
+				? "Alias is available right now."
+				: "Alias is already taken.";
+		}
+	}
 
 	// Convert API tags to UI tags
 	const availableTagsForUI = availableTags.map((tag) => ({
@@ -222,14 +249,21 @@ export function NewUrlForm({ onShorten, isLoading }: NewUrlFormProps) {
 				>
 					<div className="grid grid-cols-1 md:grid-cols-2 gap-3 px-1 pb-2">
 						<div>
-							<label className="block text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+							<label
+								htmlFor="custom-alias"
+								className="block text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2"
+							>
 								Custom Alias
 							</label>
 							<InputGroup>
 								<InputGroupText className="text-primary">{SHORT_DOMAIN}/</InputGroupText>
 								<InputGroupInput
+									id="custom-alias"
 									type="text"
 									value={formState.customCode}
+									maxLength={20}
+									aria-describedby="custom-alias-status"
+									aria-invalid={!!customCode && (!aliasValid || aliasTaken)}
 									onChange={(e) =>
 										setFormState({
 											...formState,
@@ -239,6 +273,13 @@ export function NewUrlForm({ onShorten, isLoading }: NewUrlFormProps) {
 									placeholder="alias"
 								/>
 							</InputGroup>
+							<p
+								id="custom-alias-status"
+								aria-live="polite"
+								className={`mt-1 text-xs ${customCode && (!aliasValid || aliasTaken) ? "text-destructive" : "text-muted-foreground"}`}
+							>
+								{aliasMessage}
+							</p>
 						</div>
 						<div>
 							<label className="block text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">

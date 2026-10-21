@@ -27,6 +27,7 @@ import (
 
 // mockLinkService is a mock implementation of LinkServiceInterface
 type mockLinkService struct {
+	ShortcodeAvailableFunc            func(ctx context.Context, shortcode string) (bool, error)
 	CreateShortLinkFunc               func(ctx context.Context, userID string, originalURL string, customShortcode *string, expiresAt *time.Time) (db.TryCreateLinkRow, error)
 	CreateShortLinkWithTagsFunc       func(ctx context.Context, userID string, originalURL string, customShortcode *string, expiresAt *time.Time, tagIDs []uuid.UUID) (db.GetLinkByIdAndUserWithTagsRow, error)
 	CreateOrFindShortLinkWithTagsFunc func(ctx context.Context, userID string, originalURL string, customShortcode *string, expiresAt *time.Time, tagIDs []uuid.UUID, forceNew bool) (db.GetLinkByIdAndUserWithTagsRow, bool, error)
@@ -40,6 +41,13 @@ type mockLinkService struct {
 	RecordClickFunc                   func(ctx context.Context, linkID uuid.UUID, ip, userAgent, referrer string)
 	GetLinkAnalyticsFunc              func(ctx context.Context, userID string, shortcode string) (*analytics.LinkAnalytics, error)
 	GetDashboardStatsFunc             func(ctx context.Context, userID string) (*service.DashboardStats, error)
+}
+
+func (m *mockLinkService) ShortcodeAvailable(ctx context.Context, shortcode string) (bool, error) {
+	if m.ShortcodeAvailableFunc != nil {
+		return m.ShortcodeAvailableFunc(ctx, shortcode)
+	}
+	return false, errors.New("not implemented")
 }
 
 func (m *mockLinkService) CreateShortLink(ctx context.Context, userID string, originalURL string, customShortcode *string, expiresAt *time.Time) (db.TryCreateLinkRow, error) {
@@ -347,6 +355,48 @@ func TestLinkHandler_CreateLinkExistingAndForceNew(t *testing.T) {
 			}
 			if response.Existing != tc.existing || response.Data.Shortcode != "demo" {
 				t.Fatalf("response=%+v", response)
+			}
+		})
+	}
+}
+
+func TestLinkHandler_CheckShortcodeAvailability(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		code      string
+		available bool
+		err       error
+		status    int
+	}{
+		{"available", "fresh", true, nil, http.StatusOK},
+		{"taken", "claimed", false, nil, http.StatusOK},
+		{"invalid", "api", false, apperrors.InvalidShortcode, http.StatusBadRequest},
+		{"database error", "fresh", false, errors.New("database unavailable"), http.StatusInternalServerError},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			handler := &LinkHandler{
+				LinkService: &mockLinkService{ShortcodeAvailableFunc: func(_ context.Context, code string) (bool, error) {
+					if code != tc.code {
+						t.Fatalf("code = %q, want %q", code, tc.code)
+					}
+					return tc.available, tc.err
+				}},
+				logger: createTestLogger(),
+			}
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/shortcodes/availability?shortcode="+tc.code, nil)
+			rec := httptest.NewRecorder()
+			handler.CheckShortcodeAvailability(rec, req)
+			if rec.Code != tc.status {
+				t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+			}
+			if tc.err == nil {
+				var response dto.SuccessResponse[dto.ShortcodeAvailability]
+				if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+					t.Fatal(err)
+				}
+				if response.Data.Available != tc.available {
+					t.Fatalf("available=%v, want %v", response.Data.Available, tc.available)
+				}
 			}
 		})
 	}
