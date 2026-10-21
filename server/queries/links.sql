@@ -1,11 +1,8 @@
 -- name: TryCreateLink :one
 -- sqlc.arg(shortcode) sqlc.arg(original_url) sqlc.arg(user_id) sqlc.narg(expires_at)
 INSERT INTO links (shortcode, original_url, user_id, expires_at)
-SELECT @shortcode::VARCHAR(20), @original_url::TEXT, @user_id::TEXT, @expires_at
-WHERE NOT EXISTS (
-    SELECT 1 FROM links 
-    WHERE shortcode = @shortcode::VARCHAR(20) AND deleted_at IS NULL
-)
+VALUES (@shortcode::VARCHAR(20), @original_url::TEXT, @user_id::TEXT, @expires_at)
+ON CONFLICT (shortcode) WHERE deleted_at IS NULL DO NOTHING
 RETURNING id, shortcode, original_url, expires_at, is_active, created_at, updated_at;
 
 

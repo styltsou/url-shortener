@@ -478,11 +478,8 @@ func (q *Queries) ListUserLinks(ctx context.Context, arg ListUserLinksParams) ([
 
 const tryCreateLink = `-- name: TryCreateLink :one
 INSERT INTO links (shortcode, original_url, user_id, expires_at)
-SELECT $1::VARCHAR(20), $2::TEXT, $3::TEXT, $4
-WHERE NOT EXISTS (
-    SELECT 1 FROM links 
-    WHERE shortcode = $1::VARCHAR(20) AND deleted_at IS NULL
-)
+VALUES ($1::VARCHAR(20), $2::TEXT, $3::TEXT, $4)
+ON CONFLICT (shortcode) WHERE deleted_at IS NULL DO NOTHING
 RETURNING id, shortcode, original_url, expires_at, is_active, created_at, updated_at
 `
 

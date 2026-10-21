@@ -14,13 +14,14 @@ const (
 
 	CodeInvalidID ErrorCode = "invalid id"
 
-	CodeLinkNotFound ErrorCode = "link_not_found"
-	CodeInvalidURL   ErrorCode = "invalid_url"
-	CodeLinkExpired  ErrorCode = "link_expired"
-	CodeCodeTaken    ErrorCode = "code_taken"
-	CodeTagNotFound  ErrorCode = "tag_not_found"
-	CodeTagNameTaken ErrorCode = "tag_name_taken"
-	CodeRateLimited  ErrorCode = "rate_limit_exceeded"
+	CodeLinkNotFound     ErrorCode = "link_not_found"
+	CodeInvalidURL       ErrorCode = "invalid_url"
+	CodeInvalidShortcode ErrorCode = "invalid_shortcode"
+	CodeLinkExpired      ErrorCode = "link_expired"
+	CodeCodeTaken        ErrorCode = "code_taken"
+	CodeTagNotFound      ErrorCode = "tag_not_found"
+	CodeTagNameTaken     ErrorCode = "tag_name_taken"
+	CodeRateLimited      ErrorCode = "rate_limit_exceeded"
 
 	CodeForbidden        ErrorCode = "forbidden"
 	CodeNotFound         ErrorCode = "not_found"
@@ -40,6 +41,7 @@ var (
 
 	LinkNotFound       = errors.New("Link not found")
 	InvalidURL         = errors.New("Invalid URL")
+	InvalidShortcode   = errors.New("Invalid shortcode")
 	LinkExpired        = errors.New("Link expired")
 	LinkShortcodeTaken = errors.New("Shortcode already taken")
 	TagNotFound        = errors.New("Tag not found")

@@ -87,20 +87,38 @@ func (h *LinkHandler) Redirect(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		h.logger.Warn("Link not found for redirect",
-			zap.Error(err),
-			zap.String("shortcode", shortcode),
-			zap.String("method", r.Method),
-			zap.String("path", r.URL.Path),
-			zap.String("remote_addr", r.RemoteAddr),
-		)
-		render.Status(r, http.StatusNotFound)
-		render.HTML(w, r, `<!DOCTYPE html>
+		if errors.Is(err, apperrors.LinkNotFound) {
+			h.logger.Warn("Link not found for redirect",
+				zap.Error(err),
+				zap.String("shortcode", shortcode),
+				zap.String("method", r.Method),
+				zap.String("path", r.URL.Path),
+			)
+			render.Status(r, http.StatusNotFound)
+			render.HTML(w, r, `<!DOCTYPE html>
 <html>
 	<head><title>Link Not Found</title></head>
 	<body>
 		<h1>404 - Link Not Found</h1>
-		<p>This link may have expired or been deleted.</p>
+		<p>This link was not found.</p>
+	</body>
+</html>`)
+			return
+		}
+
+		h.logger.Error("Redirect lookup failed",
+			zap.Error(err),
+			zap.String("shortcode", shortcode),
+			zap.String("method", r.Method),
+			zap.String("path", r.URL.Path),
+		)
+		render.Status(r, http.StatusServiceUnavailable)
+		render.HTML(w, r, `<!DOCTYPE html>
+<html>
+	<head><title>Link Unavailable</title></head>
+	<body>
+		<h1>503 - Service Unavailable</h1>
+		<p>Please try again later.</p>
 	</body>
 </html>`)
 		return
@@ -519,6 +537,14 @@ func (h *LinkHandler) handleError(w http.ResponseWriter, r *http.Request, err er
 				Detail: "",
 			},
 		})
+
+	case errors.Is(err, apperrors.InvalidShortcode):
+		h.logger.Warn("Invalid shortcode", zap.Error(err), zap.String("path", r.URL.Path))
+		render.Status(r, http.StatusBadRequest)
+		render.JSON(w, r, dto.ErrorResponse{Error: dto.ErrorObject{
+			Code: apperrors.CodeInvalidShortcode, Title: apperrors.InvalidShortcode.Error(),
+			Detail: "Use 1–20 ASCII letters, digits, hyphens or underscores; 'api' is reserved",
+		}})
 
 	case errors.Is(err, sql.ErrNoRows):
 		h.logger.Warn("Resource not found",

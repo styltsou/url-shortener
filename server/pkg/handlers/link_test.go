@@ -9,6 +9,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -145,6 +146,7 @@ func createTestLogger() logger.Logger {
 }
 
 func TestLinkHandler_CreateLink(t *testing.T) {
+	invalidCode := "api"
 	tests := []struct {
 		name             string
 		requestBody      dto.CreateLink
@@ -211,6 +213,24 @@ func TestLinkHandler_CreateLink(t *testing.T) {
 				}
 				if response.Error.Code != apperrors.CodeInvalidURL {
 					t.Errorf("Response Error.Code = %s, want %s", response.Error.Code, apperrors.CodeInvalidURL)
+				}
+			},
+		},
+		{
+			name:        "invalid shortcode",
+			requestBody: dto.CreateLink{URL: "https://example.com", Shortcode: &invalidCode},
+			userID:      "user_123",
+			mockService: &mockLinkService{CreateShortLinkFunc: func(context.Context, string, string, *string, *time.Time) (db.TryCreateLinkRow, error) {
+				return db.TryCreateLinkRow{}, apperrors.InvalidShortcode
+			}},
+			expectedStatus: http.StatusBadRequest,
+			validateResponse: func(t *testing.T, w *httptest.ResponseRecorder) {
+				var response dto.ErrorResponse
+				if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+					t.Fatal(err)
+				}
+				if response.Error.Code != apperrors.CodeInvalidShortcode {
+					t.Fatalf("code = %s", response.Error.Code)
 				}
 			},
 		},
@@ -1186,6 +1206,26 @@ func TestLinkHandler_Redirect(t *testing.T) {
 			},
 			expectedStatus: http.StatusGone,
 		},
+		{
+			name:      "disabled or deleted link",
+			shortcode: shortcode,
+			mockService: &mockLinkService{
+				GetOriginalURLFunc: func(context.Context, string) (db.GetLinkForRedirectRow, error) {
+					return db.GetLinkForRedirectRow{}, apperrors.LinkNotFound
+				},
+			},
+			expectedStatus: http.StatusNotFound,
+		},
+		{
+			name:      "database failure",
+			shortcode: shortcode,
+			mockService: &mockLinkService{
+				GetOriginalURLFunc: func(context.Context, string) (db.GetLinkForRedirectRow, error) {
+					return db.GetLinkForRedirectRow{}, errors.New("private database details")
+				},
+			},
+			expectedStatus: http.StatusServiceUnavailable,
+		},
 	}
 
 	for _, tt := range tests {
@@ -1211,6 +1251,13 @@ func TestLinkHandler_Redirect(t *testing.T) {
 				location := w.Header().Get("Location")
 				if location != tt.expectedURL {
 					t.Errorf("Redirect() Location = %s, want %s", location, tt.expectedURL)
+				}
+			} else {
+				if w.Header().Get("Location") != "" {
+					t.Fatal("failed redirect must not set Location")
+				}
+				if strings.Contains(w.Body.String(), "private database details") {
+					t.Fatal("response leaked database error")
 				}
 			}
 		})

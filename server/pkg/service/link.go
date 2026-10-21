@@ -2,12 +2,15 @@ package service
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/binary"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -25,12 +28,13 @@ import (
 
 const (
 	// Cache key prefix for link lookups
-	cacheKeyPrefix = "link:"
-	// Cache TTL: 24 hours
-	cacheTTL = 24 * time.Hour
+	cacheKeyPrefix = "link:redirect:v2:"
+	// Bound stale redirects if Redis invalidation fails after a database change.
+	cacheTTL = time.Minute
 
 	// Length of auto-generated shortcodes
-	defaultCodeLen = 7
+	defaultCodeLen  = 7
+	maxCodeAttempts = 5
 )
 
 // base62Alphabet contains the characters used for shortcode generation.
@@ -39,7 +43,7 @@ const base62Alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123
 
 // generateCode creates a deterministic shortcode from a URL and user ID.
 // Uses SHA-256 as a content hash, then encodes the first 8 bytes as base62.
-// Same inputs always produce the same shortcode (deterministic deduplication).
+// Same inputs produce the same first candidate; occupied codes get random retries.
 func generateCode(originalURL, userID string) string {
 	h := sha256.Sum256([]byte(originalURL + "|" + userID))
 	// Use first 8 bytes of the hash (64 bits) as a large number
@@ -51,6 +55,45 @@ func generateCode(originalURL, userID string) string {
 		code = string(base62Alphabet[0]) + code
 	}
 	return code[:defaultCodeLen]
+}
+
+// A retry uses a random code so unrelated links with the same hash prefix can coexist.
+func randomCode() (string, error) {
+	code := make([]byte, defaultCodeLen)
+	for i := range code {
+		for {
+			var b [1]byte
+			if _, err := rand.Read(b[:]); err != nil {
+				return "", err
+			}
+			if b[0] < 248 { // Avoid modulo bias: 248 is divisible by 62.
+				code[i] = base62Alphabet[int(b[0])%len(base62Alphabet)]
+				break
+			}
+		}
+	}
+	return string(code), nil
+}
+
+func validShortcode(code string) bool {
+	if len(code) == 0 || len(code) > 20 || strings.EqualFold(code, "api") {
+		return false
+	}
+	for i := range len(code) {
+		c := code[i]
+		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-' || c == '_') {
+			return false
+		}
+	}
+	return true
+}
+
+func shortcodeConflict(err error) bool {
+	if errors.Is(err, sql.ErrNoRows) {
+		return true
+	}
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == apperrors.PgUniqueViolation && pgErr.ConstraintName == "idx_links_shortcode"
 }
 
 // base62EncodeUint64 converts a uint64 to a base62 string.
@@ -92,16 +135,29 @@ type TxBeginner interface {
 	Begin(ctx context.Context) (pgx.Tx, error)
 }
 
-type LinkService struct {
-	txBeginner      TxBeginner
-	queries         LinkQueries
-	cache           *redis.Client
-	analyticsClient analytics.ClientInterface
-	logger          logger.Logger
-	runInTx         func(ctx context.Context, fn func(LinkQueries) error) error
+type redirectCache interface {
+	Get(ctx context.Context, key string) *redis.StringCmd
+	Set(ctx context.Context, key string, value interface{}, expiration time.Duration) *redis.StatusCmd
+	Del(ctx context.Context, keys ...string) *redis.IntCmd
 }
 
-func NewLinkService(txBeginner TxBeginner, queries LinkQueries, cache *redis.Client, analyticsClient analytics.ClientInterface, logger logger.Logger) *LinkService {
+type cachedRedirect struct {
+	ID        uuid.UUID  `json:"id"`
+	URL       string     `json:"url"`
+	ExpiresAt *time.Time `json:"expires_at,omitempty"`
+}
+
+type LinkService struct {
+	txBeginner        TxBeginner
+	queries           LinkQueries
+	cache             redirectCache
+	analyticsClient   analytics.ClientInterface
+	logger            logger.Logger
+	runInTx           func(ctx context.Context, fn func(LinkQueries) error) error
+	generateShortcode func(originalURL, userID string, attempt int) (string, error)
+}
+
+func NewLinkService(txBeginner TxBeginner, queries LinkQueries, cache redirectCache, analyticsClient analytics.ClientInterface, logger logger.Logger) *LinkService {
 	s := &LinkService{
 		txBeginner:      txBeginner,
 		queries:         queries,
@@ -202,6 +258,9 @@ func (s *LinkService) createShortLink(
 	}
 
 	if customShortcode != nil {
+		if !validShortcode(*customShortcode) {
+			return db.TryCreateLinkRow{}, apperrors.InvalidShortcode
+		}
 		link, err := queries.TryCreateLink(ctx, db.TryCreateLinkParams{
 			Shortcode:   *customShortcode,
 			OriginalUrl: originalURL,
@@ -211,29 +270,37 @@ func (s *LinkService) createShortLink(
 		if err == nil {
 			return link, nil
 		}
-		if errors.Is(err, sql.ErrNoRows) {
+		if shortcodeConflict(err) {
 			return db.TryCreateLinkRow{},
 				fmt.Errorf("%w: %s", apperrors.LinkShortcodeTaken, *customShortcode)
 		}
 		return db.TryCreateLinkRow{}, fmt.Errorf("failed to create link: %w", err)
 	}
 
-	code := generateCode(originalURL, userID)
-	link, err := queries.TryCreateLink(ctx, db.TryCreateLinkParams{
-		Shortcode:   code,
-		OriginalUrl: originalURL,
-		UserID:      userID,
-		ExpiresAt:   expiresAtTimestamp,
-	})
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return db.TryCreateLinkRow{},
-				fmt.Errorf("collision after inserting code %s: %w", code, err)
+	for attempt := range maxCodeAttempts {
+		var code string
+		var err error
+		if s.generateShortcode != nil {
+			code, err = s.generateShortcode(originalURL, userID, attempt)
+		} else if attempt == 0 {
+			code = generateCode(originalURL, userID)
+		} else {
+			code, err = randomCode()
 		}
-		return db.TryCreateLinkRow{}, fmt.Errorf("failed to create link: %w", err)
+		if err != nil {
+			return db.TryCreateLinkRow{}, fmt.Errorf("failed to generate shortcode: %w", err)
+		}
+		link, err := queries.TryCreateLink(ctx, db.TryCreateLinkParams{
+			Shortcode: code, OriginalUrl: originalURL, UserID: userID, ExpiresAt: expiresAtTimestamp,
+		})
+		if err == nil {
+			return link, nil
+		}
+		if !shortcodeConflict(err) {
+			return db.TryCreateLinkRow{}, fmt.Errorf("failed to create link: %w", err)
+		}
 	}
-
-	return link, nil
+	return db.TryCreateLinkRow{}, fmt.Errorf("failed to create link: shortcode collisions after %d attempts", maxCodeAttempts)
 }
 
 // validateURL validates that the URL is well-formed and uses http/https
@@ -326,7 +393,7 @@ func (s *LinkService) ListAllLinks(ctx context.Context, userID string, isActive 
 		return nil, fmt.Errorf("failed to get links: %w", err)
 	}
 
-	totalPages := int((total+int64(limit)-1) / int64(limit)) //nolint:gosec // small int, max 100
+	totalPages := int((total + int64(limit) - 1) / int64(limit)) //nolint:gosec // small int, max 100
 
 	s.logger.Debug("Database query completed for ListUserLinks",
 		zap.String("user_id", userID),
@@ -368,19 +435,26 @@ func (s *LinkService) GetOriginalURL(ctx context.Context, code string) (db.GetLi
 
 	// Try to get from cache if Redis is available
 	if s.cache != nil {
-		cachedURL, err := s.cache.Get(ctx, cacheKey).Result()
+		payload, err := s.cache.Get(ctx, cacheKey).Result()
 		if err == nil {
-			// Cache hit - return immediately
-			s.logger.Debug("Cache hit for link redirect",
-				zap.String("shortcode", code),
-			)
-			return db.GetLinkForRedirectRow{
-				OriginalUrl: cachedURL,
-			}, nil
+			var cached cachedRedirect
+			if json.Unmarshal([]byte(payload), &cached) == nil && cached.ID != uuid.Nil && validateURL(cached.URL) == nil {
+				if cached.ExpiresAt == nil || cached.ExpiresAt.After(time.Now()) {
+					row := db.GetLinkForRedirectRow{ID: cached.ID, OriginalUrl: cached.URL}
+					if cached.ExpiresAt != nil {
+						row.ExpiresAt = pgtype.Timestamp{Time: *cached.ExpiresAt, Valid: true}
+					}
+					s.logger.Debug("Cache hit for link redirect", zap.String("shortcode", code))
+					return row, nil
+				}
+			}
+			// Invalid or expired entries are never used as redirects. In particular,
+			// URL-only values from the old cache format cannot be trusted.
+			s.logger.Warn("Ignoring invalid redirect cache entry", zap.String("shortcode", code))
 		}
 		// Cache miss or Redis error - continue to database lookup
 		// (We don't log cache misses as errors, they're expected)
-		if !errors.Is(err, redis.Nil) {
+		if err != nil && !errors.Is(err, redis.Nil) {
 			// Redis error (not a cache miss) - log but continue
 			s.logger.Warn("Redis cache error, falling back to database",
 				zap.String("shortcode", code),
@@ -399,13 +473,27 @@ func (s *LinkService) GetOriginalURL(ctx context.Context, code string) (db.GetLi
 	}
 
 	// Check if the link has expired (in Go, so we can return a specific error)
-	if link.ExpiresAt.Valid && link.ExpiresAt.Time.Before(time.Now()) {
+	now := time.Now()
+	if link.ExpiresAt.Valid && !link.ExpiresAt.Time.After(now) {
 		return db.GetLinkForRedirectRow{}, fmt.Errorf("%w: code %s", apperrors.LinkExpired, code)
 	}
 
 	// Populate cache for next time (non-blocking - don't fail if cache write fails)
 	if s.cache != nil {
-		if err := s.cache.Set(ctx, cacheKey, link.OriginalUrl, cacheTTL).Err(); err != nil {
+		ttl := cacheTTL
+		cached := cachedRedirect{ID: link.ID, URL: link.OriginalUrl}
+		if link.ExpiresAt.Valid {
+			expiresAt := link.ExpiresAt.Time
+			cached.ExpiresAt = &expiresAt
+			if remaining := expiresAt.Sub(now); remaining < ttl {
+				ttl = remaining
+			}
+		}
+		payload, marshalErr := json.Marshal(cached)
+		if marshalErr != nil {
+			return link, nil
+		}
+		if err := s.cache.Set(ctx, cacheKey, payload, ttl).Err(); err != nil {
 			// Log but don't fail - cache write errors shouldn't break the request
 			s.logger.Warn("Failed to populate cache",
 				zap.String("shortcode", code),
@@ -465,6 +553,9 @@ func (s *LinkService) UpdateLink(
 	expiresAtSet bool,
 	expiresAt *time.Time,
 ) (db.UpdateLinkRow, error) {
+	if shortcode != nil && !validShortcode(*shortcode) {
+		return db.UpdateLinkRow{}, apperrors.InvalidShortcode
+	}
 
 	// Fetch the existing link to get the old shortcode for cache invalidation
 	existingLink, err := s.queries.GetLinkByIdAndUser(ctx, db.GetLinkByIdAndUserParams{
@@ -522,8 +613,8 @@ func (s *LinkService) UpdateLink(
 	}
 
 	// Invalidate cache for both old and new shortcodes
-	s.invalidateCache(ctx, oldShortcode)
-	s.invalidateCache(ctx, updatedLink.Shortcode)
+	s.invalidateCache(oldShortcode)
+	s.invalidateCache(updatedLink.Shortcode)
 
 	return updatedLink, nil
 }
@@ -543,7 +634,7 @@ func (s *LinkService) DeleteLink(ctx context.Context, userID string, id uuid.UUI
 	}
 
 	// Invalidate cache after successful deletion
-	s.invalidateCache(ctx, deletedLink.Shortcode)
+	s.invalidateCache(deletedLink.Shortcode)
 
 	return deletedLink, nil
 }
@@ -762,13 +853,17 @@ func (s *LinkService) GetDashboardStats(ctx context.Context, userID string) (*Da
 
 // invalidateCache removes a link from the cache
 // This is called after updates and deletes to ensure cache consistency
-func (s *LinkService) invalidateCache(ctx context.Context, shortcode string) {
+func (s *LinkService) invalidateCache(shortcode string) {
 	if s.cache == nil {
 		return
 	}
 
+	// A completed database mutation must not skip invalidation just because its
+	// incoming HTTP request was canceled while the response was being written.
+	invalidateCtx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
 	cacheKey := cacheKeyPrefix + shortcode
-	if err := s.cache.Del(ctx, cacheKey).Err(); err != nil {
+	if err := s.cache.Del(invalidateCtx, cacheKey).Err(); err != nil {
 		// Log but don't fail - cache invalidation errors shouldn't break the request
 		s.logger.Warn("Failed to invalidate cache",
 			zap.String("shortcode", shortcode),
