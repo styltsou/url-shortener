@@ -1,6 +1,6 @@
 # link4.it — URL Shortener
 
-A production-grade URL shortener with analytics, tags, and QR code generation. Built with Go + React, designed for solo founders and SaaS teams.
+A URL shortener MVP with analytics, tags, and QR code generation. Built with Go and React.
 
 ## Stack
 
@@ -59,12 +59,18 @@ See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for MVP deployment instructions.
 | `GET` | `/api/v1/links/{shortcode}/analytics` | Analytics |
 | `GET` | `/api/v1/links/{shortcode}/qrcode` | QR code |
 
-Full API reference at http://localhost:8080/api/v1/reference
+The API reference page is at http://localhost:8080/api/v1/reference; loading its OpenAPI document in a running stack still needs verification.
 
 Operational headers:
 
 - `X-Request-ID` is returned on every response and included in production logs.
 - `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`, and `Retry-After` describe rate-limit state.
+
+Shortcodes use 1–20 ASCII letters, digits, hyphens or underscores. `api` is reserved. A generated shortcode begins with a deterministic 7-character code; a collision (including a repeated URL for the same user) retries with a random code. Soft-deleted shortcodes can be reused.
+
+Redis redirect entries live for at most one minute and never past a link's expiration. Updates and deletes invalidate them on a best-effort basis. If Redis is unavailable during invalidation, a cached redirect may remain usable until its TTL ends; immediate revocation is not guaranteed. Redirects fall back to PostgreSQL when Redis is unavailable. ClickHouse analytics are best-effort and queued events may be lost if shutdown exceeds five seconds.
+
+Rate limiting is in memory per API instance and resets on restart. Public redirects and `/api/v1` requests have separate buckets. Set `TRUSTED_PROXY_CIDRS` to the CIDR ranges of proxies that directly connect to the API before forwarded client IP headers are used; leave it empty when clients connect directly.
 
 ## Docker
 
@@ -93,7 +99,7 @@ cd client && pnpm install && pnpm dev
 
 ## CI
 
-GitHub Actions runs backend tests, frontend checks, and OpenAPI YAML validation on pushes to `main` and pull requests.
+GitHub Actions runs backend tests, frontend checks, tests and builds, and OpenAPI YAML validation on pushes to `main` and pull requests.
 
 ## License
 
