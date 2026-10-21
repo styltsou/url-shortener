@@ -3,6 +3,7 @@ package analytics
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
@@ -49,7 +50,6 @@ const (
 
 type clickRequest struct {
 	event ClickEvent
-	ctx   context.Context
 }
 
 type ClientInterface interface {
@@ -86,6 +86,11 @@ type Client struct {
 	workersCtx    context.Context
 	workersCancel context.CancelFunc
 	tableName     string
+	mu            sync.Mutex
+	closed        bool
+	closeDone     chan struct{}
+	closeErr      error
+	workers       sync.WaitGroup
 }
 
 func New(ctx context.Context, cfg Config, log logger.Logger) (ClientInterface, error) {
@@ -148,6 +153,7 @@ func New(ctx context.Context, cfg Config, log logger.Logger) (ClientInterface, e
 		workersCtx:    workersCtx,
 		workersCancel: workersCancel,
 		tableName:     tableName,
+		closeDone:     make(chan struct{}),
 	}
 	c.startWorkers()
 	return c, nil
@@ -155,18 +161,18 @@ func New(ctx context.Context, cfg Config, log logger.Logger) (ClientInterface, e
 
 func (c *Client) startWorkers() {
 	for i := range numClickWorkers {
+		c.workers.Add(1)
 		go c.worker(i)
 	}
 }
 
 func (c *Client) worker(id int) {
-	for {
-		select {
-		case <-c.workersCtx.Done():
-			return
-		case req := <-c.clickChan:
-			c.insertClick(req.ctx, req.event)
+	defer c.workers.Done()
+	for req := range c.clickChan {
+		if c.workersCtx.Err() != nil {
+			continue // The shutdown deadline elapsed; discard remaining queued events.
 		}
+		c.insertClick(c.workersCtx, req.event)
 	}
 }
 
@@ -185,9 +191,14 @@ func (c *Client) insertClick(ctx context.Context, event ClickEvent) {
 	}
 }
 
-func (c *Client) RecordClick(ctx context.Context, event ClickEvent) {
+func (c *Client) RecordClick(_ context.Context, event ClickEvent) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.closed {
+		return
+	}
 	select {
-	case c.clickChan <- clickRequest{event: event, ctx: ctx}:
+	case c.clickChan <- clickRequest{event: event}:
 	default:
 		c.logger.Warn("Click event dropped — worker queue full",
 			zap.String("link_id", event.LinkID.String()),
@@ -393,28 +404,23 @@ func (c *Client) getUserClicksOverTime(ctx context.Context, linkIDs []uuid.UUID,
 }
 
 func (c *Client) Close() error {
-	c.workersCancel()
-
-	drainCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	ticker := time.NewTicker(50 * time.Millisecond)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ticker.C:
-			if len(c.clickChan) == 0 {
-				return c.conn.Close()
-			}
-		case <-drainCtx.Done():
-			remaining := len(c.clickChan)
-			if remaining > 0 {
-				c.logger.Warn("Click worker pool drained with remaining events",
-					zap.Int("dropped_events", remaining),
-				)
-			}
-			return c.conn.Close()
-		}
+	c.mu.Lock()
+	if c.closed {
+		done := c.closeDone
+		c.mu.Unlock()
+		<-done
+		return c.closeErr
 	}
+	c.closed = true
+	close(c.clickChan)
+	c.mu.Unlock()
+
+	// Let the workers consume the queue; cancel in-flight inserts at the deadline.
+	timer := time.AfterFunc(5*time.Second, c.workersCancel)
+	c.workers.Wait()
+	timer.Stop()
+	c.workersCancel()
+	c.closeErr = c.conn.Close()
+	close(c.closeDone)
+	return c.closeErr
 }
