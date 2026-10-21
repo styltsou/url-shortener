@@ -61,6 +61,17 @@ func (h *HealthHandler) Ready(w http.ResponseWriter, r *http.Request) {
 		status = http.StatusServiceUnavailable
 		overall = healthUnavailable
 		h.logger.Error("Postgres readiness check failed", zap.Error(err))
+	} else {
+		var schemaReady bool
+		err := h.pool.QueryRow(ctx, `SELECT to_regclass('links') IS NOT NULL
+			AND to_regclass('tags') IS NOT NULL
+			AND to_regclass('link_tags') IS NOT NULL`).Scan(&schemaReady)
+		if err != nil || !schemaReady {
+			checks["postgres"] = healthUnavailable
+			status = http.StatusServiceUnavailable
+			overall = healthUnavailable
+			h.logger.Error("Postgres schema readiness check failed", zap.Bool("schema_ready", schemaReady), zap.Error(err))
+		}
 	}
 
 	if h.redis != nil {

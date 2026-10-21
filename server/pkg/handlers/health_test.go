@@ -5,9 +5,13 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 )
@@ -117,5 +121,52 @@ func TestHealthHandler_Ready_NilRedisIsDisabled(t *testing.T) {
 	}
 	if response.Checks["redis"] != "disabled" {
 		t.Errorf("Ready() redis check = %s, want disabled", response.Checks["redis"])
+	}
+}
+
+func TestHealthHandler_ReadyRequiresSchema(t *testing.T) {
+	dsn := os.Getenv("TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("set TEST_DATABASE_URL for PostgreSQL integration test")
+	}
+	ctx := context.Background()
+	admin, err := pgx.Connect(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	schema := "test_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+	if _, err := admin.Exec(ctx, "CREATE SCHEMA "+schema); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = admin.Exec(context.Background(), "DROP SCHEMA "+schema+" CASCADE")
+		_ = admin.Close(context.Background())
+	})
+	config, err := pgxpool.ParseConfig(dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	config.ConnConfig.RuntimeParams["search_path"] = schema
+	pool, err := pgxpool.NewWithConfig(ctx, config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(pool.Close)
+	handler := NewHealthHandler(pool, nil, createTestLogger())
+	readyStatus := func() int {
+		response := httptest.NewRecorder()
+		handler.Ready(response, httptest.NewRequest(http.MethodGet, "/api/v1/health/ready", nil))
+		return response.Code
+	}
+	if got := readyStatus(); got != http.StatusServiceUnavailable {
+		t.Fatalf("missing schema status = %d, want 503", got)
+	}
+	for _, table := range []string{"links", "tags", "link_tags"} {
+		if _, err := pool.Exec(ctx, "CREATE TABLE "+table+" (id integer)"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := readyStatus(); got != http.StatusOK {
+		t.Fatalf("migrated schema status = %d, want 200", got)
 	}
 }

@@ -145,6 +145,16 @@ func Load() (*Config, error) {
 	v.SetConfigType("env")
 	v.AddConfigPath("./")
 	v.AutomaticEnv()
+	// Viper's Unmarshal only sees known keys. Bind variables that have no default,
+	// so container environments populate the struct without a .env file.
+	for _, key := range []string{
+		"POSTGRES_CONNECTION_STRING", "REDIS_URL", "REDIS_USERNAME", "REDIS_PASSWORD",
+		"CLERK_SECRET_KEY", "CLICKHOUSE_URL", "CLICKHOUSE_USERNAME", "CLICKHOUSE_PASSWORD",
+	} {
+		if err := v.BindEnv(key); err != nil {
+			return nil, fmt.Errorf("bind %s: %w", key, err)
+		}
+	}
 
 	cfg = &Config{}
 

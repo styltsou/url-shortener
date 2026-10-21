@@ -3,6 +3,8 @@ package router
 import (
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 
 	"github.com/MarceloPetrucio/go-scalar-api-reference"
 	"github.com/go-chi/chi/v5"
@@ -24,16 +26,38 @@ func New(linkH *handlers.LinkHandler, tagH *handlers.TagHandler, healthH *handle
 	// Set custom MethodNotAllowed handler
 	r.MethodNotAllowed(methodNotAllowedHandler(logger))
 
-	r.Get("/{code}", linkH.Redirect)
+	r.Get("/{shortcode}", linkH.Redirect)
 
 	r.Get("/api/v1/health", healthH.Live)
 	r.Get("/api/v1/health/live", healthH.Live)
 	r.Get("/api/v1/health/ready", healthH.Ready)
+	r.Get("/api/v1/openapi.yaml", func(w http.ResponseWriter, r *http.Request) {
+		path, err := findOpenAPISpec()
+		if err != nil {
+			logger.Error("OpenAPI document unavailable", zap.Error(err))
+			http.Error(w, "API document unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		w.Header().Set("Content-Type", "application/yaml; charset=utf-8")
+		http.ServeFile(w, r, path)
+	})
 
 	r.Get("/api/v1/reference", func(w http.ResponseWriter, r *http.Request) {
+		path, err := findOpenAPISpec()
+		if err != nil {
+			logger.Error("OpenAPI document unavailable", zap.Error(err))
+			http.Error(w, "API document unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		spec, err := os.ReadFile(path)
+		if err != nil {
+			logger.Error("OpenAPI document unreadable", zap.Error(err))
+			http.Error(w, "API document unavailable", http.StatusServiceUnavailable)
+			return
+		}
 		htmlContent, err := scalar.ApiReferenceHTML(&scalar.Options{
-			// SpecURL: "https://generator3.swagger.io/openapi.json",
-			SpecURL: "../docs/openapi/openapi.yaml",
+			SpecURL:     "/api/v1/openapi.yaml",
+			SpecContent: string(spec),
 			CustomOptions: scalar.CustomOptions{
 				PageTitle: "URL Shortener API",
 			},
@@ -92,6 +116,24 @@ func New(linkH *handlers.LinkHandler, tagH *handlers.TagHandler, healthH *handle
 	})
 
 	return r
+}
+
+func findOpenAPISpec() (string, error) {
+	dir, err := os.Getwd()
+	if err != nil {
+		return "", err
+	}
+	for {
+		path := filepath.Join(dir, "docs", "openapi", "openapi.yaml")
+		if info, err := os.Stat(path); err == nil && info.Mode().IsRegular() {
+			return path, nil
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return "", fmt.Errorf("docs/openapi/openapi.yaml not found")
+		}
+		dir = parent
+	}
 }
 
 // notFoundHandler returns a handler for 404 Not Found errors

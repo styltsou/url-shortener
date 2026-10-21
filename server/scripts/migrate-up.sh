@@ -14,7 +14,7 @@ if [ -z "$POSTGRES_CONNECTION_STRING" ]; then
 fi
 
 # Create schema_migrations table if it doesn't exist
-psql "$POSTGRES_CONNECTION_STRING" -c "
+psql "$POSTGRES_CONNECTION_STRING" -v ON_ERROR_STOP=1 -c "
   CREATE TABLE IF NOT EXISTS schema_migrations (
     version VARCHAR(255) PRIMARY KEY,
     applied_at TIMESTAMP NOT NULL DEFAULT NOW()
@@ -31,14 +31,13 @@ for file in migrations/*.up.sql; do
     VERSION=$(basename "$file" | sed 's/^\([0-9]*\)_.*/\1/')
     
     # Check if migration has already been run
-    EXISTS=$(psql "$POSTGRES_CONNECTION_STRING" -tAc "SELECT COUNT(*) FROM schema_migrations WHERE version = '$VERSION';" 2>/dev/null || echo "0")
+    EXISTS=$(psql "$POSTGRES_CONNECTION_STRING" -v ON_ERROR_STOP=1 -tAc "SELECT COUNT(*) FROM schema_migrations WHERE version = '$VERSION';")
     
     if [ "$EXISTS" = "0" ]; then
       echo "Running migration: $file (version: $VERSION)"
-      psql "$POSTGRES_CONNECTION_STRING" -f "$file" || exit 1
-      
-      # Record that this migration has been run
-      psql "$POSTGRES_CONNECTION_STRING" -c "INSERT INTO schema_migrations (version) VALUES ('$VERSION');" || exit 1
+      # Apply the SQL and its version record in one transaction.
+      psql "$POSTGRES_CONNECTION_STRING" -v ON_ERROR_STOP=1 --single-transaction -f "$file" \
+        -c "INSERT INTO schema_migrations (version) VALUES ('$VERSION');"
       
       PENDING_COUNT=$((PENDING_COUNT + 1))
       echo "✓ Migration $VERSION applied successfully"
