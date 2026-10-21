@@ -45,3 +45,8 @@ export function getShortDomain(): string {
 // Convenience constants evaluated at module load time
 export const API_BASE_URL = getApiBaseUrl();
 export const SHORT_DOMAIN = getShortDomain();
+
+export function buildShortURL(shortcode: string, domain = SHORT_DOMAIN): string {
+	const origin = /^https?:\/\//i.test(domain) ? domain : `https://${domain}`;
+	return `${origin.replace(/\/$/, "")}/${encodeURIComponent(shortcode)}`;
+}

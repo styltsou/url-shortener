@@ -12,12 +12,14 @@ import type {
 import type { Url } from "@/types/url";
 import { toast } from "sonner";
 import { DEFAULT_PAGE_SIZE } from "@/lib/constants";
+import { dashboardKeys } from "./use-dashboard";
+import { analyticsKeys } from "./use-analytics";
 
 // Query keys
 export const linkKeys = {
 	all: ["links"] as const,
 	lists: () => [...linkKeys.all, "list"] as const,
-	list: (filters?: { tagIds?: string[]; status?: string; page?: number }) => {
+	list: (filters?: { tagIds?: string[]; status?: string; page?: number; limit?: number }) => {
 		const key = [...linkKeys.lists()] as const;
 		if (filters) {
 			return [...key, filters] as const;
@@ -42,12 +44,14 @@ interface UseLinksResult {
 
 // Fetch all links
 export function useLinks(options?: UseLinksOptions) {
-	const { getToken } = useAuth();
+	const { getToken, isLoaded, isSignedIn, userId } = useAuth();
+	const authUserId = isLoaded && isSignedIn ? userId : null;
 	const page = options?.page ?? 1;
 	const limit = options?.limit ?? DEFAULT_PAGE_SIZE;
 
 	return useQuery({
-		queryKey: linkKeys.list({ ...options, page }),
+		queryKey: [...linkKeys.list({ ...options, page, limit }), authUserId],
+		enabled: !!authUserId,
 		queryFn: async (): Promise<UseLinksResult> => {
 			const token = await getToken();
 
@@ -82,10 +86,11 @@ export function useLinks(options?: UseLinksOptions) {
 
 // The GET endpoint identifies links by shortcode; mutations use the UUID.
 export function useLink(shortcode: string) {
-	const { getToken } = useAuth();
+	const { getToken, isLoaded, isSignedIn, userId } = useAuth();
+	const authUserId = isLoaded && isSignedIn ? userId : null;
 
 	return useQuery({
-		queryKey: linkKeys.detail(shortcode),
+		queryKey: [...linkKeys.detail(shortcode), authUserId],
 		queryFn: async () => {
 			const token = await getToken();
 			const response = await apiClient.get<{ data: Link }>(
@@ -94,7 +99,7 @@ export function useLink(shortcode: string) {
 			);
 			return linkToUrl(response.data);
 		},
-		enabled: !!shortcode,
+		enabled: !!authUserId && !!shortcode,
 	});
 }
 
@@ -112,6 +117,7 @@ export function useCreateLink() {
 		onSuccess: () => {
 			// Invalidate all list queries to refresh the links list
 			queryClient.invalidateQueries({ queryKey: linkKeys.lists() });
+			queryClient.invalidateQueries({ queryKey: dashboardKeys.all });
 			toast.success("Link created successfully");
 		},
 		onError: (error: Error) => {
@@ -135,6 +141,8 @@ export function useUpdateLink() {
 			queryClient.invalidateQueries({ queryKey: linkKeys.lists() });
 			// A changed shortcode also leaves the old detail key behind.
 			queryClient.invalidateQueries({ queryKey: linkKeys.details() });
+			queryClient.invalidateQueries({ queryKey: analyticsKeys.all });
+			queryClient.invalidateQueries({ queryKey: dashboardKeys.all });
 			toast.success("Link updated successfully");
 		},
 		onError: (error) => {
@@ -158,7 +166,10 @@ export function useDeleteLink() {
 		},
 		onSuccess: () => {
 			// Invalidate and refetch to get the updated list without the deleted link
-			queryClient.invalidateQueries({ queryKey: linkKeys.list() });
+			queryClient.invalidateQueries({ queryKey: linkKeys.lists() });
+			queryClient.invalidateQueries({ queryKey: linkKeys.details() });
+			queryClient.invalidateQueries({ queryKey: analyticsKeys.all });
+			queryClient.invalidateQueries({ queryKey: dashboardKeys.all });
 			toast.success("Link deleted successfully");
 		},
 	});

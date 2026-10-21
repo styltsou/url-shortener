@@ -36,7 +36,7 @@ import {
 	Trash2,
 } from "lucide-react";
 import { useDeleteLink, useUpdateLink } from "@/hooks/use-links";
-import { SHORT_DOMAIN } from "@/lib/env";
+import { SHORT_DOMAIN, buildShortURL } from "@/lib/env";
 import { MAX_VISIBLE_TAGS, EXPIRATION_WARNING_HOURS } from "@/lib/constants";
 
 interface UrlCardProps {
@@ -83,7 +83,7 @@ export function UrlCard({ url }: UrlCardProps) {
 
 	const handleCopy = (e: React.MouseEvent) => {
 		e.stopPropagation();
-		navigator.clipboard.writeText(`https://${shortLink}`);
+		navigator.clipboard.writeText(buildShortURL(url.shortCode));
 		setCopied(true);
 		setTooltipOpen(true);
 		setTimeout(() => {

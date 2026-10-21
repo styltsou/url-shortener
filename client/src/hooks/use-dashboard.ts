@@ -30,10 +30,12 @@ export const dashboardKeys = {
 };
 
 export function useDashboard() {
-	const { getToken } = useAuth();
+	const { getToken, isLoaded, isSignedIn, userId } = useAuth();
+	const authUserId = isLoaded && isSignedIn ? userId : null;
 
 	return useQuery({
-		queryKey: dashboardKeys.all,
+		queryKey: [...dashboardKeys.all, authUserId],
+		enabled: !!authUserId,
 		queryFn: async () => {
 			const token = await getToken();
 			const response = await apiClient.get<{ data: DashboardData }>("/api/v1/dashboard", token);

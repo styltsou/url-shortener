@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { formatDate, getTimePeriod } from "@/lib/date-utils";
 import type { Url } from "@/types/url";
-import { SHORT_DOMAIN } from "@/lib/env";
+import { SHORT_DOMAIN, buildShortURL } from "@/lib/env";
 
 interface LinkHeaderProps {
 	url: Url;
@@ -20,7 +20,7 @@ export function LinkHeader({ url }: LinkHeaderProps) {
 	const isEffectivelyInactive = isManuallyInactive || isExpired;
 
 	const handleCopy = () => {
-		navigator.clipboard.writeText(`https://${SHORT_DOMAIN}/${url.shortCode}`);
+		navigator.clipboard.writeText(buildShortURL(url.shortCode));
 		setCopied(true);
 		setTooltipOpen(true);
 		setTimeout(() => {

@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@clerk/clerk-react";
 import { apiClient } from "@/lib/api-client";
 import { linkKeys } from "./use-links";
+import { dashboardKeys } from "./use-dashboard";
 import { toast } from "sonner";
 import type { Tag } from "@/types/api";
 
@@ -14,10 +15,12 @@ export const tagKeys = {
 
 // Fetch all tags
 export function useTags() {
-	const { getToken } = useAuth();
+	const { getToken, isLoaded, isSignedIn, userId } = useAuth();
+	const authUserId = isLoaded && isSignedIn ? userId : null;
 
 	return useQuery({
-		queryKey: tagKeys.list(),
+		queryKey: [...tagKeys.list(), authUserId],
+		enabled: !!authUserId,
 		queryFn: async () => {
 			const token = await getToken();
 			const response = await apiClient.get<{ data: Tag[] }>("/api/v1/tags", token);
@@ -57,11 +60,10 @@ export function useAddTagsToLink() {
 			const token = await getToken();
 			await apiClient.post(`/api/v1/links/${linkId}/tags`, { tag_ids: tagIds }, token);
 		},
-		onSuccess: (_, variables) => {
+		onSuccess: () => {
 			queryClient.invalidateQueries({ queryKey: linkKeys.lists() });
-			queryClient.invalidateQueries({
-				queryKey: linkKeys.detail(variables.linkId),
-			});
+			queryClient.invalidateQueries({ queryKey: linkKeys.details() });
+			queryClient.invalidateQueries({ queryKey: dashboardKeys.all });
 			toast.success("Tags added successfully");
 		},
 		onError: (error) => {
@@ -80,11 +82,10 @@ export function useRemoveTagsFromLink() {
 			const token = await getToken();
 			await apiClient.post(`/api/v1/links/${linkId}/tags/remove`, { tag_ids: tagIds }, token);
 		},
-		onSuccess: (_, variables) => {
+		onSuccess: () => {
 			queryClient.invalidateQueries({ queryKey: linkKeys.lists() });
-			queryClient.invalidateQueries({
-				queryKey: linkKeys.detail(variables.linkId),
-			});
+			queryClient.invalidateQueries({ queryKey: linkKeys.details() });
+			queryClient.invalidateQueries({ queryKey: dashboardKeys.all });
 			toast.success("Tags removed successfully");
 		},
 		onError: (error) => {

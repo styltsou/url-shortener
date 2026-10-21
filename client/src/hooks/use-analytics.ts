@@ -15,18 +15,19 @@ export const analyticsKeys = {
 };
 
 export function useAnalytics(shortcode: string) {
-	const { getToken } = useAuth();
+	const { getToken, isLoaded, isSignedIn, userId } = useAuth();
+	const authUserId = isLoaded && isSignedIn ? userId : null;
 
 	return useQuery({
-		queryKey: analyticsKeys.detail(shortcode),
+		queryKey: [...analyticsKeys.detail(shortcode), authUserId],
 		queryFn: async () => {
 			const token = await getToken();
 			const response = await apiClient.get<{ data: AnalyticsData }>(
-				`/api/v1/links/${shortcode}/analytics`,
+				`/api/v1/links/${encodeURIComponent(shortcode)}/analytics`,
 				token,
 			);
 			return response.data;
 		},
-		enabled: !!shortcode,
+		enabled: !!authUserId && !!shortcode,
 	});
 }
