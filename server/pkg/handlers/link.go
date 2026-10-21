@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"math"
 	"net"
 	"net/http"
 	"strconv"
@@ -264,10 +265,13 @@ func parseListLinksQuery(r *http.Request) (listLinksQuery, *dto.ErrorResponse) {
 	}
 	if limitStr := values.Get("limit"); limitStr != "" {
 		limit, err := strconv.Atoi(limitStr)
-		if err != nil || limit < 1 {
-			return listLinksQuery{}, invalidQuery("invalid_request", "Invalid limit", "limit must be a positive integer")
+		if err != nil || limit < 1 || limit > 100 {
+			return listLinksQuery{}, invalidQuery("invalid_request", "Invalid limit", "limit must be between 1 and 100")
 		}
 		query.Limit = limit
+	}
+	if query.Page > math.MaxInt32/query.Limit {
+		return listLinksQuery{}, invalidQuery("invalid_request", "Invalid page", "page is too large")
 	}
 
 	return query, nil

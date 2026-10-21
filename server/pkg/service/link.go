@@ -9,7 +9,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -319,8 +321,14 @@ func validateURL(rawURL string) error {
 		return fmt.Errorf("%w: URL must use http or https scheme", apperrors.InvalidURL)
 	}
 
-	if parsedURL.Host == "" {
+	if parsedURL.Hostname() == "" || parsedURL.User != nil {
 		return fmt.Errorf("%w: URL must have a valid host", apperrors.InvalidURL)
+	}
+	if port := parsedURL.Port(); port != "" {
+		number, err := strconv.Atoi(port)
+		if err != nil || number < 1 || number > 65535 {
+			return fmt.Errorf("%w: URL port must be between 1 and 65535", apperrors.InvalidURL)
+		}
 	}
 
 	if len(rawURL) > 2048 {
@@ -356,6 +364,9 @@ func (s *LinkService) ListAllLinks(ctx context.Context, userID string, isActive 
 	}
 	if limit > 100 {
 		limit = 100 // Max limit
+	}
+	if page > math.MaxInt32/limit {
+		return nil, fmt.Errorf("page is too large for the database offset")
 	}
 
 	offset := (page - 1) * limit

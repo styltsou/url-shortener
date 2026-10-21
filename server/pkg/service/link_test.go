@@ -231,6 +231,15 @@ func TestValidateURL(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name: "valid local URL", url: "http://localhost:8080/path", wantErr: false,
+		},
+		{
+			name: "invalid port", url: "https://example.com:99999", wantErr: true, errType: apperrors.InvalidURL,
+		},
+		{
+			name: "credential in destination", url: "https://user:secret@example.com", wantErr: true, errType: apperrors.InvalidURL,
+		},
+		{
 			name:    "empty URL",
 			url:     "",
 			wantErr: true,

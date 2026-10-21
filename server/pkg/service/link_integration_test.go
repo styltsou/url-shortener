@@ -162,3 +162,78 @@ func TestPostgresConcurrentShortcodesAndRedisLifecycle(t *testing.T) {
 		t.Fatalf("expired link redirected: %v", err)
 	}
 }
+
+func TestPostgresOwnershipTagsAndLinkUpdates(t *testing.T) {
+	pool := integrationPool(t)
+	ctx := context.Background()
+	queries := db.New(pool)
+	links := NewLinkService(pool, queries, nil, nil, createTestLogger())
+	tags := NewTagService(queries, createTestLogger())
+	tagA, err := tags.CreateTag(ctx, "user-a", "private-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tagB, err := tags.CreateTag(ctx, "user-b", "private-b")
+	if err != nil {
+		t.Fatal(err)
+	}
+	linkA, err := links.CreateShortLink(ctx, "user-a", "https://example.com/a", nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	linkB, err := links.CreateShortLink(ctx, "user-b", "https://example.com/b", nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := links.AddTagsToLink(ctx, "user-b", linkA.ID, []uuid.UUID{tagB.ID}); !errors.Is(err, apperrors.LinkNotFound) {
+		t.Fatalf("other user assigned a tag to link: %v", err)
+	}
+	if _, err := links.AddTagsToLink(ctx, "user-a", linkA.ID, []uuid.UUID{tagB.ID}); !errors.Is(err, apperrors.TagNotFound) {
+		t.Fatalf("other user's tag was assigned: %v", err)
+	}
+	if _, err := links.CreateShortLinkWithTags(ctx, "user-a", "https://example.com/rollback", nil, nil, []uuid.UUID{tagB.ID}); !errors.Is(err, apperrors.TagNotFound) {
+		t.Fatalf("foreign tag did not roll back link creation: %v", err)
+	}
+	linksA, err := links.ListAllLinks(ctx, "user-a", nil, nil, 1, 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if linksA.Total != 1 {
+		t.Fatalf("failed create transaction left %d links", linksA.Total)
+	}
+	if _, err := links.AddTagsToLink(ctx, "user-a", linkA.ID, []uuid.UUID{tagA.ID, tagA.ID}); err != nil {
+		t.Fatal(err)
+	}
+	var count int
+	if err := pool.QueryRow(ctx, "SELECT count(*) FROM link_tags WHERE link_id=$1", linkA.ID).Scan(&count); err != nil || count != 1 {
+		t.Fatalf("duplicate tag assignment count=%d err=%v", count, err)
+	}
+	if _, err := links.RemoveTagsFromLink(ctx, "user-b", linkA.ID, []uuid.UUID{tagA.ID}); !errors.Is(err, apperrors.LinkNotFound) {
+		t.Fatalf("other user removed a tag: %v", err)
+	}
+	if _, err := tags.UpdateTag(ctx, "user-b", tagA.ID, "stolen"); !errors.Is(err, apperrors.TagNotFound) {
+		t.Fatalf("other user renamed a tag: %v", err)
+	}
+	if _, err := tags.DeleteTag(ctx, "user-b", tagA.ID); !errors.Is(err, apperrors.TagNotFound) {
+		t.Fatalf("other user deleted a tag: %v", err)
+	}
+	if _, err := links.UpdateLink(ctx, "user-b", linkA.ID, nil, nil, false, nil); !errors.Is(err, apperrors.LinkNotFound) {
+		t.Fatalf("other user updated a link: %v", err)
+	}
+	if _, err := links.DeleteLink(ctx, "user-b", linkA.ID); !errors.Is(err, apperrors.LinkNotFound) {
+		t.Fatalf("other user deleted a link: %v", err)
+	}
+	conflict := linkB.Shortcode
+	if _, err := links.UpdateLink(ctx, "user-a", linkA.ID, &conflict, nil, false, nil); !errors.Is(err, apperrors.LinkShortcodeTaken) {
+		t.Fatalf("shortcode update conflict: %v", err)
+	}
+	expires := time.Now().Add(time.Hour)
+	if _, err := links.UpdateLink(ctx, "user-a", linkA.ID, nil, nil, true, &expires); err != nil {
+		t.Fatal(err)
+	}
+	cleared, err := links.UpdateLink(ctx, "user-a", linkA.ID, nil, nil, true, nil)
+	if err != nil || cleared.ExpiresAt.Valid {
+		t.Fatalf("expiration was not cleared: link=%+v err=%v", cleared, err)
+	}
+}
