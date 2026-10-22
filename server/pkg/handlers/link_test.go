@@ -1464,10 +1464,11 @@ func TestLinkHandler_GetDashboard(t *testing.T) {
 						t.Errorf("GetDashboardStats called with wrong userID: got %s, want %s", uid, userID)
 					}
 					return &service.DashboardStats{
-						TotalLinks:  10,
-						ActiveLinks: 5,
-						TotalClicks: 100,
-						RecentLinks: []dto.LinkResponse{},
+						TotalLinks:         10,
+						ActiveLinks:        5,
+						TotalClicks:        100,
+						AnalyticsAvailable: true,
+						RecentLinks:        []dto.LinkResponse{},
 					}, nil
 				},
 			},
@@ -1498,6 +1499,9 @@ func TestLinkHandler_GetDashboard(t *testing.T) {
 		if response.Data.TotalClicks != 100 {
 			t.Errorf("Response Data.TotalClicks = %d, want 100", response.Data.TotalClicks)
 		}
+		if !response.Data.AnalyticsAvailable {
+			t.Error("Response Data.AnalyticsAvailable = false, want true")
+		}
 	})
 
 	t.Run("service error", func(t *testing.T) {
@@ -1526,6 +1530,31 @@ func TestLinkHandler_GetDashboard(t *testing.T) {
 func TestLinkHandler_GetLinkAnalytics(t *testing.T) {
 	userID := "user_123"
 	shortcode := "abc123"
+
+	t.Run("analytics unavailable", func(t *testing.T) {
+		handler := &LinkHandler{
+			LinkService: &mockLinkService{GetLinkAnalyticsFunc: func(context.Context, string, string) (*analytics.LinkAnalytics, error) {
+				return nil, apperrors.AnalyticsUnavailable
+			}},
+			logger: createTestLogger(),
+		}
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/links/"+shortcode+"/analytics", nil)
+		req = req.WithContext(middleware.WithUserID(req.Context(), userID))
+		w := httptest.NewRecorder()
+		r := chi.NewRouter()
+		r.Get("/api/v1/links/{shortcode}/analytics", handler.GetLinkAnalytics)
+		r.ServeHTTP(w, req)
+		if w.Code != http.StatusServiceUnavailable {
+			t.Errorf("GetLinkAnalytics() status = %d, want %d", w.Code, http.StatusServiceUnavailable)
+		}
+		var response dto.ErrorResponse
+		if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+			t.Fatal(err)
+		}
+		if response.Error.Code != apperrors.CodeAnalyticsUnavailable {
+			t.Errorf("GetLinkAnalytics() code = %q, want %q", response.Error.Code, apperrors.CodeAnalyticsUnavailable)
+		}
+	})
 
 	t.Run("successful analytics", func(t *testing.T) {
 		handler := &LinkHandler{

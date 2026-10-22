@@ -5,9 +5,15 @@ interface DashboardStatsProps {
 	totalLinks: number;
 	activeLinks: number;
 	totalClicks: number;
+	analyticsAvailable: boolean;
 }
 
-export function DashboardStats({ totalLinks, activeLinks, totalClicks }: DashboardStatsProps) {
+export function DashboardStats({
+	totalLinks,
+	activeLinks,
+	totalClicks,
+	analyticsAvailable,
+}: DashboardStatsProps) {
 	return (
 		<div className="grid gap-4 sm:grid-cols-3">
 			<Card>
@@ -47,8 +53,11 @@ export function DashboardStats({ totalLinks, activeLinks, totalClicks }: Dashboa
 				</CardHeader>
 				<CardContent>
 					<p className="text-3xl font-bold tracking-tight text-foreground">
-						{totalClicks.toLocaleString()}
+						{analyticsAvailable ? totalClicks.toLocaleString() : "—"}
 					</p>
+					{!analyticsAvailable && (
+						<p className="text-sm text-muted-foreground">Analytics unavailable</p>
+					)}
 				</CardContent>
 			</Card>
 		</div>

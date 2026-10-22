@@ -11,7 +11,7 @@ export function TotalClicksCard({ clicks, isLoading }: TotalClicksCardProps) {
 			<Card>
 				<CardHeader>
 					<CardTitle className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-						Total Clicks
+						Clicks (30d)
 					</CardTitle>
 				</CardHeader>
 				<CardContent>
@@ -27,7 +27,7 @@ export function TotalClicksCard({ clicks, isLoading }: TotalClicksCardProps) {
 		<Card>
 			<CardHeader>
 				<CardTitle className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-					Total Clicks
+					Clicks (30d)
 				</CardTitle>
 			</CardHeader>
 			<CardContent>

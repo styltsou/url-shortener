@@ -27,7 +27,8 @@ const (
 	CodeNotFound         ErrorCode = "not_found"
 	CodeMethodNotAllowed ErrorCode = "method_not_allowed"
 
-	CodeInternalError ErrorCode = "internal_server_error"
+	CodeInternalError        ErrorCode = "internal_server_error"
+	CodeAnalyticsUnavailable ErrorCode = "analytics_unavailable"
 )
 
 const (
@@ -47,6 +48,7 @@ var (
 	TagNotFound        = errors.New("Tag not found")
 	TagNameTaken       = errors.New("Tag name already taken")
 
-	ErrForbidden  = errors.New("Forbidden")
-	InternalError = errors.New("Internal server error")
+	ErrForbidden         = errors.New("Forbidden")
+	InternalError        = errors.New("Internal server error")
+	AnalyticsUnavailable = errors.New("Analytics unavailable")
 )

@@ -1276,6 +1276,9 @@ func TestLinkService_GetDashboardStats(t *testing.T) {
 		if stats.TotalClicks != 100 {
 			t.Errorf("GetDashboardStats() TotalClicks = %d, want 100", stats.TotalClicks)
 		}
+		if !stats.AnalyticsAvailable {
+			t.Error("GetDashboardStats() analytics should be available after a successful query")
+		}
 		if len(stats.RecentLinks) != 1 {
 			t.Errorf("GetDashboardStats() RecentLinks length = %d, want 1", len(stats.RecentLinks))
 		}
@@ -1312,6 +1315,9 @@ func TestLinkService_GetDashboardStats(t *testing.T) {
 		}
 		if stats.TotalClicks != 0 {
 			t.Errorf("GetDashboardStats() TotalClicks = %d, want 0", stats.TotalClicks)
+		}
+		if stats.AnalyticsAvailable {
+			t.Error("GetDashboardStats() analytics should be unavailable without a client")
 		}
 	})
 
@@ -1388,6 +1394,9 @@ func TestLinkService_GetDashboardStats(t *testing.T) {
 		}
 		if stats.TotalClicks != 0 {
 			t.Errorf("GetDashboardStats() TotalClicks should be 0 on analytics failure, got %d", stats.TotalClicks)
+		}
+		if stats.AnalyticsAvailable {
+			t.Error("GetDashboardStats() analytics should be unavailable after a failed query")
 		}
 	})
 }
@@ -1489,6 +1498,21 @@ func TestLinkService_GetLinkAnalytics(t *testing.T) {
 
 		if err == nil {
 			t.Errorf("GetLinkAnalytics() expected error for analytics failure")
+		}
+		if !errors.Is(err, apperrors.AnalyticsUnavailable) {
+			t.Errorf("GetLinkAnalytics() error = %v, want AnalyticsUnavailable", err)
+		}
+	})
+
+	t.Run("analytics client missing", func(t *testing.T) {
+		service := &LinkService{
+			queries: &mockQueries{GetLinkByShortcodeAndUserFunc: func(context.Context, db.GetLinkByShortcodeAndUserParams) (db.GetLinkByShortcodeAndUserRow, error) {
+				return db.GetLinkByShortcodeAndUserRow{ID: linkID}, nil
+			}},
+		}
+		_, err := service.GetLinkAnalytics(ctx, userID, shortcode)
+		if !errors.Is(err, apperrors.AnalyticsUnavailable) {
+			t.Errorf("GetLinkAnalytics() error = %v, want AnalyticsUnavailable", err)
 		}
 	})
 }

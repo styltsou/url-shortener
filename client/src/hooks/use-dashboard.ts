@@ -21,6 +21,7 @@ export interface DashboardData {
 	total_links: number;
 	active_links: number;
 	total_clicks: number;
+	analytics_available: boolean;
 	clicks_over_time: ClicksOverTime[];
 	recent_links: RecentLink[];
 }

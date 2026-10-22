@@ -515,6 +515,14 @@ func (h *LinkHandler) GetLinkAnalytics(w http.ResponseWriter, r *http.Request) {
 // handleError maps errors to HTTP responses and writes them directly
 func (h *LinkHandler) handleError(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
+	case errors.Is(err, apperrors.AnalyticsUnavailable):
+		h.logger.Warn("Analytics unavailable", zap.Error(err), zap.String("path", r.URL.Path))
+		render.Status(r, http.StatusServiceUnavailable)
+		render.JSON(w, r, dto.ErrorResponse{Error: dto.ErrorObject{
+			Code: apperrors.CodeAnalyticsUnavailable, Title: apperrors.AnalyticsUnavailable.Error(),
+			Detail: "Click analytics cannot be loaded right now",
+		}})
+
 	case errors.Is(err, apperrors.LinkExpired):
 		h.logger.Info("Link expired",
 			zap.Error(err),

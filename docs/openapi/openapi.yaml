@@ -420,7 +420,7 @@ components:
       properties:
         data:
           type: object
-          required: [total_links, active_links, total_clicks, recent_links]
+          required: [total_links, active_links, total_clicks, analytics_available, recent_links]
           properties:
             total_links:
               type: integer
@@ -431,6 +431,10 @@ components:
             total_clicks:
               type: integer
               minimum: 0
+              description: Clicks in the last 30 days; meaningful only when analytics_available is true
+            analytics_available:
+              type: boolean
+              description: Whether the click analytics query completed successfully
             clicks_over_time:
               type: array
               items:
@@ -837,7 +841,7 @@ paths:
           type: string
       responses:
         '200':
-          description: Click counts and breakdowns; zero values when analytics is unavailable
+          description: Click counts and breakdowns for the last 30 days
           content:
             application/json:
               schema:
@@ -850,6 +854,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '404':
           description: Link not found for this user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Click analytics is unavailable
           content:
             application/json:
               schema:

@@ -9,7 +9,6 @@ export interface Url {
 	shortCode: string;
 	createdAt: Date;
 	expiresAt: Date | null;
-	clicks: number;
 	tags: Tag[];
 	isActive?: boolean; // Active/inactive status
 }

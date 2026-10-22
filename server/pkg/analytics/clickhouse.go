@@ -2,6 +2,7 @@ package analytics
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -59,6 +60,8 @@ type ClientInterface interface {
 	Close() error
 }
 
+var ErrUnavailable = errors.New("analytics unavailable")
+
 type nopClient struct {
 	logger logger.Logger
 }
@@ -68,11 +71,11 @@ func (c *nopClient) RecordClick(_ context.Context, event ClickEvent) {
 }
 
 func (c *nopClient) GetLinkAnalytics(_ context.Context, _ uuid.UUID, _, _ time.Time) (*LinkAnalytics, error) {
-	return &LinkAnalytics{}, nil
+	return nil, ErrUnavailable
 }
 
 func (c *nopClient) GetUserAnalytics(_ context.Context, _ []uuid.UUID, _, _ time.Time) (*UserAnalytics, error) {
-	return &UserAnalytics{}, nil
+	return nil, ErrUnavailable
 }
 
 func (c *nopClient) Close() error {
@@ -232,7 +235,7 @@ func (c *Client) GetLinkAnalytics(ctx context.Context, linkID uuid.UUID, since, 
 
 	return &LinkAnalytics{
 		TotalClicks:    totalClicks,
-		ClicksOverTime: clicksOverTime,
+		ClicksOverTime: fillDailyClicks(clicksOverTime, since, until),
 		TopReferrers:   topReferrers,
 		TopUserAgents:  topUserAgents,
 	}, nil
@@ -259,7 +262,7 @@ func (c *Client) getTotalClicks(ctx context.Context, linkID uuid.UUID, since, un
 
 func (c *Client) getClicksOverTime(ctx context.Context, linkID uuid.UUID, since, until time.Time) ([]ClicksOverTime, error) {
 	rows, err := c.conn.Query(ctx, fmt.Sprintf(`
-		SELECT toDate(timestamp) AS date, count() AS clicks
+		SELECT toDate(timestamp, 'UTC') AS date, count() AS clicks
 		FROM %s
 		WHERE link_id = ? AND timestamp >= ? AND timestamp <= ?
 		GROUP BY date
@@ -356,7 +359,7 @@ func (c *Client) GetUserAnalytics(ctx context.Context, linkIDs []uuid.UUID, sinc
 
 	return &UserAnalytics{
 		TotalClicks:    totalClicks,
-		ClicksOverTime: clicksOverTime,
+		ClicksOverTime: fillDailyClicks(clicksOverTime, since, until),
 	}, nil
 }
 
@@ -381,7 +384,7 @@ func (c *Client) getUserTotalClicks(ctx context.Context, linkIDs []uuid.UUID, si
 
 func (c *Client) getUserClicksOverTime(ctx context.Context, linkIDs []uuid.UUID, since, until time.Time) ([]ClicksOverTime, error) {
 	rows, err := c.conn.Query(ctx, fmt.Sprintf(`
-		SELECT toDate(timestamp) AS date, count() AS clicks
+		SELECT toDate(timestamp, 'UTC') AS date, count() AS clicks
 		FROM %s
 		WHERE link_id = ANY(?) AND timestamp >= ? AND timestamp <= ?
 		GROUP BY date
@@ -401,6 +404,23 @@ func (c *Client) getUserClicksOverTime(ctx context.Context, linkIDs []uuid.UUID,
 		result = append(result, stat)
 	}
 	return result, nil
+}
+
+// fillDailyClicks gives the chart one point per UTC date in the reporting window.
+func fillDailyClicks(rows []ClicksOverTime, since, until time.Time) []ClicksOverTime {
+	byDate := make(map[string]int, len(rows))
+	for _, row := range rows {
+		byDate[row.Date.Format("2006-01-02")] += row.Clicks
+	}
+	start := since.UTC()
+	day := time.Date(start.Year(), start.Month(), start.Day(), 0, 0, 0, 0, time.UTC)
+	end := until.UTC()
+	result := make([]ClicksOverTime, 0, 31)
+	for !day.After(end) {
+		result = append(result, ClicksOverTime{Date: day, Clicks: byDate[day.Format("2006-01-02")]})
+		day = day.AddDate(0, 0, 1)
+	}
+	return result
 }
 
 func (c *Client) Close() error {

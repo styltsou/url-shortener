@@ -25,7 +25,6 @@ import { formatDateTime, getTimePeriod } from "@/lib/date-utils";
 import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import {
-	BarChart3,
 	Clock,
 	Copy,
 	CopyCheck,
@@ -244,19 +243,6 @@ export function UrlCard({ url }: UrlCardProps) {
 					</div>
 
 					<div className="flex items-center gap-4 text-sm text-muted-foreground">
-						<Tooltip>
-							<TooltipTrigger asChild>
-								<div className="flex items-center gap-1.5">
-									<BarChart3 className="w-4 h-4 text-muted-foreground" />
-									<span className="font-semibold text-foreground">
-										{url.clicks.toLocaleString()}
-									</span>
-								</div>
-							</TooltipTrigger>
-							<TooltipContent>
-								<p>Total Clicks</p>
-							</TooltipContent>
-						</Tooltip>
 						{url.expiresAt && (
 							<Tooltip>
 								<TooltipTrigger asChild>

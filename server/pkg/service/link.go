@@ -600,9 +600,13 @@ func (s *LinkService) GetLinkAnalytics(ctx context.Context, userID string, short
 	until := time.Now()
 	since := until.AddDate(0, 0, -30)
 
+	if s.analyticsClient == nil {
+		return nil, apperrors.AnalyticsUnavailable
+	}
 	result, err := s.analyticsClient.GetLinkAnalytics(ctx, link.ID, since, until)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get analytics: %w", err)
+		s.logger.Warn("Failed to get link analytics", zap.String("shortcode", shortcode), zap.Error(err))
+		return nil, apperrors.AnalyticsUnavailable
 	}
 
 	return result, nil
@@ -848,11 +852,12 @@ func uniqueUUIDs(ids []uuid.UUID) []uuid.UUID {
 }
 
 type DashboardStats struct {
-	TotalLinks     int64                      `json:"total_links"`
-	ActiveLinks    int64                      `json:"active_links"`
-	TotalClicks    int                        `json:"total_clicks"`
-	ClicksOverTime []analytics.ClicksOverTime `json:"clicks_over_time,omitempty"`
-	RecentLinks    []dto.LinkResponse         `json:"recent_links"`
+	TotalLinks         int64                      `json:"total_links"`
+	ActiveLinks        int64                      `json:"active_links"`
+	TotalClicks        int                        `json:"total_clicks"`
+	AnalyticsAvailable bool                       `json:"analytics_available"`
+	ClicksOverTime     []analytics.ClicksOverTime `json:"clicks_over_time,omitempty"`
+	RecentLinks        []dto.LinkResponse         `json:"recent_links"`
 }
 
 func (s *LinkService) GetDashboardStats(ctx context.Context, userID string) (*DashboardStats, error) {
@@ -908,6 +913,7 @@ func (s *LinkService) GetDashboardStats(ctx context.Context, userID string) (*Da
 			} else {
 				dashboard.TotalClicks = ua.TotalClicks
 				dashboard.ClicksOverTime = ua.ClicksOverTime
+				dashboard.AnalyticsAvailable = true
 			}
 		}
 	}

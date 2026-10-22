@@ -13,7 +13,7 @@ export function PerformanceChartCard({ clicksData, isLoading }: PerformanceChart
 			<Card>
 				<CardHeader>
 					<CardTitle className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-						Performance
+						Clicks Over Time (30d)
 					</CardTitle>
 				</CardHeader>
 				<CardContent>
@@ -27,11 +27,15 @@ export function PerformanceChartCard({ clicksData, isLoading }: PerformanceChart
 		<Card>
 			<CardHeader>
 				<CardTitle className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-					Performance
+					Clicks Over Time (30d)
 				</CardTitle>
 			</CardHeader>
 			<CardContent>
-				<ClicksGraph data={clicksData} />
+				{clicksData.every((day) => day.clicks === 0) ? (
+					<p className="text-sm text-muted-foreground">No clicks in the last 30 days.</p>
+				) : (
+					<ClicksGraph data={clicksData} />
+				)}
 			</CardContent>
 		</Card>
 	);

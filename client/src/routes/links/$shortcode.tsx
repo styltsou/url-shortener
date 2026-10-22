@@ -15,6 +15,8 @@ import { TotalClicksCard } from "@/components/link/total-clicks-card";
 import { TopSourcesCard } from "@/components/link/top-sources-card";
 import { LoadingState } from "@/components/shared/loading-state";
 import { LinkPageSkeleton } from "@/components/link/link-page-skeleton";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { formatAnalyticsDate } from "@/lib/date-utils";
 
 export const Route = createFileRoute("/links/$shortcode")({
 	component: LinkDetailPage,
@@ -25,10 +27,14 @@ function LinkDetailPage() {
 	const navigate = useNavigate();
 	const { isSignedIn, isLoaded } = useAuth();
 	const { data: url, isLoading: isLoadingLinks, error } = useLink(shortcode);
-	const { data: analyticsData, isLoading: isLoadingAnalytics } = useAnalytics(shortcode);
+	const {
+		data: analyticsData,
+		isLoading: isLoadingAnalytics,
+		isError: isAnalyticsError,
+	} = useAnalytics(shortcode);
 
 	const clicksData = (analyticsData?.clicks_over_time ?? []).map((d) => ({
-		name: new Date(d.date).toLocaleDateString("en-US", { weekday: "short" }),
+		name: formatAnalyticsDate(d.date),
 		clicks: d.clicks,
 	}));
 
@@ -86,15 +92,30 @@ function LinkDetailPage() {
 				<div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 					<div className="lg:col-span-2 space-y-6">
 						<LinkDetailsCard url={url} />
-						<PerformanceChartCard clicksData={clicksData} isLoading={isLoadingAnalytics} />
+						{isAnalyticsError ? (
+							<Card>
+								<CardHeader>
+									<CardTitle>Analytics unavailable</CardTitle>
+								</CardHeader>
+								<CardContent className="text-sm text-muted-foreground">
+									Click data cannot be loaded right now. Please try again later.
+								</CardContent>
+							</Card>
+						) : (
+							<PerformanceChartCard clicksData={clicksData} isLoading={isLoadingAnalytics} />
+						)}
 					</div>
 
 					<div className="grid grid-cols-2 lg:grid-cols-1 gap-6">
-						<TotalClicksCard
-							clicks={analyticsData?.total_clicks ?? url.clicks}
-							isLoading={isLoadingAnalytics}
-						/>
-						<TopSourcesCard referrers={processedReferrers} />
+						{!isAnalyticsError && (
+							<>
+								<TotalClicksCard
+									clicks={analyticsData?.total_clicks ?? 0}
+									isLoading={isLoadingAnalytics}
+								/>
+								<TopSourcesCard referrers={processedReferrers} />
+							</>
+						)}
 						<LinkQRCode shortcode={shortcode} />
 					</div>
 				</div>

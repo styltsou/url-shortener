@@ -1,5 +1,8 @@
 import { DATE_FORMAT_OPTIONS, DATETIME_FORMAT_OPTIONS } from "./constants";
 
+export const formatAnalyticsDate = (date: string): string =>
+	new Date(date).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+
 export const formatDate = (date: Date | null) => {
 	if (!date) return null;
 	return new Date(date).toLocaleDateString("en-US", DATE_FORMAT_OPTIONS);

@@ -12,7 +12,6 @@ export interface Link {
 	shortcode: string;
 	original_url: string;
 	user_id?: string;
-	clicks?: number | null;
 	expires_at: string | null; // ISO date string
 	created_at: string; // ISO date string
 	updated_at: string | null; // ISO date string
@@ -69,7 +68,6 @@ export function linkToUrl(link: Link): Url {
 		shortCode: link.shortcode,
 		createdAt: new Date(link.created_at),
 		expiresAt: link.expires_at ? new Date(link.expires_at) : null,
-		clicks: link.clicks || 0,
 		tags: link.tags.map((tag) => ({
 			id: tag.id,
 			name: tag.name,

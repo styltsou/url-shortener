@@ -9,6 +9,7 @@ import { RecentLinks } from "@/components/dashboard/recent-links";
 import { Button } from "@/components/ui/button";
 import { Link2, AlertCircle } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
+import { formatAnalyticsDate } from "@/lib/date-utils";
 
 export const Route = createFileRoute("/")({
 	component: DashboardPage,
@@ -58,10 +59,7 @@ function DashboardPage() {
 
 	const clicksOverTime =
 		data?.clicks_over_time?.map((item) => ({
-			name: new Date(item.date).toLocaleDateString("en-US", {
-				month: "short",
-				day: "numeric",
-			}),
+			name: formatAnalyticsDate(item.date),
 			clicks: item.clicks,
 		})) ?? [];
 
@@ -95,11 +93,15 @@ function DashboardPage() {
 								totalLinks={data?.total_links ?? 0}
 								activeLinks={data?.active_links ?? 0}
 								totalClicks={data?.total_clicks ?? 0}
+								analyticsAvailable={data?.analytics_available ?? false}
 							/>
 						</div>
 
 						<div className="mb-6">
-							<DashboardChart data={clicksOverTime} />
+							<DashboardChart
+								data={clicksOverTime}
+								analyticsAvailable={data?.analytics_available ?? false}
+							/>
 						</div>
 
 						<RecentLinks links={data?.recent_links ?? []} />
