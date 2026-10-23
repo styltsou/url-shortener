@@ -139,7 +139,7 @@ func New(config *config.Config, log logger.Logger) (*Server, error) {
 		TableName:       config.ClickhouseTableName,
 	}, s.Logger)
 	if analyticsErr != nil {
-		log.Warn("ClickHouse analytics disabled",
+		log.Warn("ClickHouse analytics unavailable at startup",
 			zap.Error(analyticsErr),
 		)
 	}
@@ -169,7 +169,7 @@ func New(config *config.Config, log logger.Logger) (*Server, error) {
 		TrustedProxies: trustedProxies,
 	}))
 
-	healthHandler := handlers.NewHealthHandler(s.Pool, s.RedisClient, s.Logger)
+	healthHandler := handlers.NewHealthHandler(s.Pool, s.RedisClient, s.AnalyticsClient, s.Logger)
 	apiRouter := router.New(linkHandler, tagHandler, healthHandler, s.Logger)
 	s.Router.Mount("/", apiRouter)
 

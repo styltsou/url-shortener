@@ -1,6 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@clerk/clerk-react";
 import { apiClient } from "@/lib/api-client";
+import {
+	analyticsQueryString,
+	DEFAULT_ANALYTICS_FILTER,
+	type AnalyticsFilter,
+} from "@/lib/analytics-filter";
 
 export interface ClicksOverTime {
 	date: string;
@@ -30,16 +35,19 @@ export const dashboardKeys = {
 	all: ["dashboard"] as const,
 };
 
-export function useDashboard() {
+export function useDashboard(filter: AnalyticsFilter = DEFAULT_ANALYTICS_FILTER) {
 	const { getToken, isLoaded, isSignedIn, userId } = useAuth();
 	const authUserId = isLoaded && isSignedIn ? userId : null;
 
 	return useQuery({
-		queryKey: [...dashboardKeys.all, authUserId],
+		queryKey: [...dashboardKeys.all, authUserId, filter.range, filter.interval],
 		enabled: !!authUserId,
 		queryFn: async () => {
 			const token = await getToken();
-			const response = await apiClient.get<{ data: DashboardData }>("/api/v1/dashboard", token);
+			const response = await apiClient.get<{ data: DashboardData }>(
+				`/api/v1/dashboard?${analyticsQueryString(filter)}`,
+				token,
+			);
 			return response.data;
 		},
 	});

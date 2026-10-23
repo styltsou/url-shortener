@@ -14,7 +14,12 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
+	"github.com/styltsou/url-shortener/server/pkg/analytics"
 )
+
+type fakeAnalyticsHealth struct{ stats analytics.DeliveryStats }
+
+func (f fakeAnalyticsHealth) DeliveryStats() analytics.DeliveryStats { return f.stats }
 
 func TestHealthHandler_Live(t *testing.T) {
 	handler := &HealthHandler{
@@ -124,6 +129,34 @@ func TestHealthHandler_Ready_NilRedisIsDisabled(t *testing.T) {
 	}
 }
 
+func TestHealthHandler_ReadyReportsAnalyticsDeliveryState(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		status   string
+		degraded bool
+	}{
+		{name: "healthy", status: analytics.DeliveryOK},
+		{name: "disabled", status: analytics.DeliveryDisabled},
+		{name: "losses", status: analytics.DeliveryDegraded, degraded: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			handler := &HealthHandler{
+				analytics: fakeAnalyticsHealth{stats: analytics.DeliveryStats{Status: tc.status}},
+				logger:    createTestLogger(),
+			}
+			w := httptest.NewRecorder()
+			handler.Ready(w, httptest.NewRequest(http.MethodGet, "/api/v1/health/ready", nil))
+			var response HealthResponse
+			if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+				t.Fatal(err)
+			}
+			if response.Checks["analytics"] != tc.status || response.Degraded != tc.degraded {
+				t.Errorf("analytics check = %q, degraded = %v; want %q, %v", response.Checks["analytics"], response.Degraded, tc.status, tc.degraded)
+			}
+		})
+	}
+}
+
 func TestHealthHandler_ReadyRequiresSchema(t *testing.T) {
 	dsn := os.Getenv("TEST_DATABASE_URL")
 	if dsn == "" {
@@ -152,7 +185,7 @@ func TestHealthHandler_ReadyRequiresSchema(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(pool.Close)
-	handler := NewHealthHandler(pool, nil, createTestLogger())
+	handler := NewHealthHandler(pool, nil, nil, createTestLogger())
 	readyStatus := func() int {
 		response := httptest.NewRecorder()
 		handler.Ready(response, httptest.NewRequest(http.MethodGet, "/api/v1/health/ready", nil))

@@ -20,6 +20,10 @@ func TestNewReturnsNopClientWhenURLMissing(t *testing.T) {
 	if _, ok := client.(*nopClient); !ok {
 		t.Fatalf("New() client = %T, want *nopClient", client)
 	}
+	client.RecordClick(context.Background(), ClickEvent{LinkID: uuid.New()})
+	if stats := client.DeliveryStats(); stats.Status != DeliveryDisabled || stats.Submitted != 1 || stats.LostUnavailable != 1 {
+		t.Fatalf("disabled client delivery stats = %+v", stats)
+	}
 	if _, err := client.GetLinkAnalytics(context.Background(), uuid.New(), time.Time{}, time.Now()); !errors.Is(err, ErrUnavailable) {
 		t.Fatalf("GetLinkAnalytics() error = %v, want ErrUnavailable", err)
 	}

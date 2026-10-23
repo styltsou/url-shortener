@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
@@ -57,17 +58,61 @@ type ClientInterface interface {
 	RecordClick(ctx context.Context, event ClickEvent)
 	GetLinkAnalytics(ctx context.Context, linkID uuid.UUID, since, until time.Time) (*LinkAnalytics, error)
 	GetUserAnalytics(ctx context.Context, linkIDs []uuid.UUID, since, until time.Time) (*UserAnalytics, error)
+	DeliveryReporter
 	Close() error
 }
 
 var ErrUnavailable = errors.New("analytics unavailable")
 
+const (
+	DeliveryOK       = "ok"
+	DeliveryDisabled = "disabled"
+	DeliveryDegraded = "degraded"
+)
+
+// DeliveryStats describes click delivery for this process since it started.
+// Submitted includes clicks that could not be queued or written.
+type DeliveryStats struct {
+	Status          string
+	Submitted       uint64
+	Written         uint64
+	LostQueueFull   uint64
+	LostInsert      uint64
+	LostShutdown    uint64
+	LostClosed      uint64
+	LostUnavailable uint64
+	Queued          int
+}
+
+func (s DeliveryStats) Lost() uint64 {
+	return s.LostQueueFull + s.LostInsert + s.LostShutdown + s.LostClosed + s.LostUnavailable
+}
+
+type DeliveryReporter interface {
+	DeliveryStats() DeliveryStats
+}
+
 type nopClient struct {
-	logger logger.Logger
+	logger    logger.Logger
+	status    string
+	submitted atomic.Uint64
 }
 
 func (c *nopClient) RecordClick(_ context.Context, event ClickEvent) {
-	// no-op
+	lost := c.submitted.Add(1)
+	if lost == 1 || lost&(lost-1) == 0 {
+		fields := []zap.Field{zap.String("status", c.status), zap.Uint64("lost_unavailable_total", lost)}
+		if c.status == DeliveryDisabled {
+			c.logger.Info("Click analytics disabled; events are not recorded", fields...)
+		} else {
+			c.logger.Warn("Click analytics unavailable; events are not recorded", fields...)
+		}
+	}
+}
+
+func (c *nopClient) DeliveryStats() DeliveryStats {
+	count := c.submitted.Load()
+	return DeliveryStats{Status: c.status, Submitted: count, LostUnavailable: count}
 }
 
 func (c *nopClient) GetLinkAnalytics(_ context.Context, _ uuid.UUID, _, _ time.Time) (*LinkAnalytics, error) {
@@ -79,6 +124,13 @@ func (c *nopClient) GetUserAnalytics(_ context.Context, _ []uuid.UUID, _, _ time
 }
 
 func (c *nopClient) Close() error {
+	if count := c.submitted.Load(); count > 0 {
+		c.logger.Warn("Click analytics delivery summary",
+			zap.String("status", c.status),
+			zap.Uint64("submitted", count),
+			zap.Uint64("lost_unavailable", count),
+		)
+	}
 	return nil
 }
 
@@ -94,12 +146,18 @@ type Client struct {
 	closeDone     chan struct{}
 	closeErr      error
 	workers       sync.WaitGroup
+	submitted     atomic.Uint64
+	written       atomic.Uint64
+	lostQueueFull atomic.Uint64
+	lostInsert    atomic.Uint64
+	lostShutdown  atomic.Uint64
+	lostClosed    atomic.Uint64
 }
 
 func New(ctx context.Context, cfg Config, log logger.Logger) (ClientInterface, error) {
 	if cfg.URL == "" {
 		log.Info("ClickHouse URL not configured, analytics disabled")
-		return &nopClient{logger: log}, nil
+		return &nopClient{logger: log, status: DeliveryDisabled}, nil
 	}
 
 	dialTimeout := cfg.DialTimeout
@@ -136,12 +194,12 @@ func New(ctx context.Context, cfg Config, log logger.Logger) (ClientInterface, e
 		ConnMaxLifetime: connMaxLifetime,
 	})
 	if err != nil {
-		return &nopClient{logger: log}, fmt.Errorf("failed to open ClickHouse connection: %w", err)
+		return &nopClient{logger: log, status: DeliveryDegraded}, fmt.Errorf("failed to open ClickHouse connection: %w", err)
 	}
 
 	if err := conn.Ping(ctx); err != nil {
 		conn.Close()
-		return &nopClient{logger: log}, fmt.Errorf("failed to ping ClickHouse: %w", err)
+		return &nopClient{logger: log, status: DeliveryDegraded}, fmt.Errorf("failed to ping ClickHouse: %w", err)
 	}
 
 	log.Info("ClickHouse connected successfully",
@@ -173,6 +231,7 @@ func (c *Client) worker(id int) {
 	defer c.workers.Done()
 	for req := range c.clickChan {
 		if c.workersCtx.Err() != nil {
+			c.lostShutdown.Add(1)
 			continue // The shutdown deadline elapsed; discard remaining queued events.
 		}
 		c.insertClick(c.workersCtx, req.event)
@@ -187,26 +246,57 @@ func (c *Client) insertClick(ctx context.Context, event ClickEvent) {
 		INSERT INTO %s (link_id, timestamp, ip, user_agent, referrer)
 		VALUES (?, ?, ?, ?, ?)
 	`, c.tableName), event.LinkID, event.Timestamp, event.IP, event.UserAgent, event.Referrer); err != nil {
+		if c.workersCtx.Err() != nil {
+			c.lostShutdown.Add(1)
+			return
+		}
+		failed := c.lostInsert.Add(1)
 		c.logger.Warn("Failed to record click event",
 			zap.String("link_id", event.LinkID.String()),
+			zap.Uint64("lost_insert_total", failed),
+			zap.Uint64("submitted_total", c.submitted.Load()),
 			zap.Error(err),
 		)
+		return
 	}
+	c.written.Add(1)
 }
 
 func (c *Client) RecordClick(_ context.Context, event ClickEvent) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	c.submitted.Add(1)
 	if c.closed {
+		c.lostClosed.Add(1)
 		return
 	}
 	select {
 	case c.clickChan <- clickRequest{event: event}:
 	default:
+		lost := c.lostQueueFull.Add(1)
 		c.logger.Warn("Click event dropped — worker queue full",
 			zap.String("link_id", event.LinkID.String()),
+			zap.Uint64("lost_queue_full_total", lost),
+			zap.Uint64("submitted_total", c.submitted.Load()),
 		)
 	}
+}
+
+func (c *Client) DeliveryStats() DeliveryStats {
+	stats := DeliveryStats{
+		Submitted:     c.submitted.Load(),
+		Written:       c.written.Load(),
+		LostQueueFull: c.lostQueueFull.Load(),
+		LostInsert:    c.lostInsert.Load(),
+		LostShutdown:  c.lostShutdown.Load(),
+		LostClosed:    c.lostClosed.Load(),
+		Queued:        len(c.clickChan),
+	}
+	stats.Status = DeliveryOK
+	if stats.Lost() > 0 {
+		stats.Status = DeliveryDegraded
+	}
+	return stats
 }
 
 func (c *Client) GetLinkAnalytics(ctx context.Context, linkID uuid.UUID, since, until time.Time) (*LinkAnalytics, error) {
@@ -440,6 +530,15 @@ func (c *Client) Close() error {
 	c.workers.Wait()
 	timer.Stop()
 	c.workersCancel()
+	stats := c.DeliveryStats()
+	c.logger.Info("Click analytics delivery summary",
+		zap.Uint64("submitted", stats.Submitted),
+		zap.Uint64("written", stats.Written),
+		zap.Uint64("lost_queue_full", stats.LostQueueFull),
+		zap.Uint64("lost_insert", stats.LostInsert),
+		zap.Uint64("lost_shutdown", stats.LostShutdown),
+		zap.Uint64("lost_closed", stats.LostClosed),
+	)
 	c.closeErr = c.conn.Close()
 	close(c.closeDone)
 	return c.closeErr

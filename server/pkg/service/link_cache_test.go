@@ -72,6 +72,9 @@ func (a *recordingAnalytics) GetUserAnalytics(context.Context, []uuid.UUID, time
 	return nil, nil
 }
 func (a *recordingAnalytics) Close() error { return nil }
+func (a *recordingAnalytics) DeliveryStats() analytics.DeliveryStats {
+	return analytics.DeliveryStats{Status: analytics.DeliveryOK}
+}
 
 func TestRedirectCachePreservesLinkIdentityAndClickAttribution(t *testing.T) {
 	ctx := context.Background()

@@ -16,7 +16,14 @@ import { TopSourcesCard } from "@/components/link/top-sources-card";
 import { LoadingState } from "@/components/shared/loading-state";
 import { LinkPageSkeleton } from "@/components/link/link-page-skeleton";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { formatAnalyticsDate } from "@/lib/date-utils";
+import { formatAnalyticsBucketDate } from "@/lib/date-utils";
+import { AnalyticsFilterControls } from "@/components/shared/analytics-filter-controls";
+import {
+	DEFAULT_ANALYTICS_FILTER,
+	rangeLabels,
+	type AnalyticsFilter,
+} from "@/lib/analytics-filter";
+import { useState } from "react";
 
 export const Route = createFileRoute("/links/$shortcode")({
 	component: LinkDetailPage,
@@ -26,15 +33,17 @@ function LinkDetailPage() {
 	const { shortcode } = Route.useParams();
 	const navigate = useNavigate();
 	const { isSignedIn, isLoaded } = useAuth();
+	const [filter, setFilter] = useState<AnalyticsFilter>(DEFAULT_ANALYTICS_FILTER);
 	const { data: url, isLoading: isLoadingLinks, error } = useLink(shortcode);
 	const {
 		data: analyticsData,
 		isLoading: isLoadingAnalytics,
 		isError: isAnalyticsError,
-	} = useAnalytics(shortcode);
+		refetch: refetchAnalytics,
+	} = useAnalytics(shortcode, filter);
 
 	const clicksData = (analyticsData?.clicks_over_time ?? []).map((d) => ({
-		name: formatAnalyticsDate(d.date),
+		name: formatAnalyticsBucketDate(d.date, filter.interval),
 		clicks: d.clicks,
 	}));
 
@@ -88,6 +97,9 @@ function LinkDetailPage() {
 						</div>
 					</div>
 				</div>
+				<div className="mb-6">
+					<AnalyticsFilterControls filter={filter} onChange={setFilter} />
+				</div>
 
 				<div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 					<div className="lg:col-span-2 space-y-6">
@@ -98,11 +110,18 @@ function LinkDetailPage() {
 									<CardTitle>Analytics unavailable</CardTitle>
 								</CardHeader>
 								<CardContent className="text-sm text-muted-foreground">
-									Click data cannot be loaded right now. Please try again later.
+									<p>Click data cannot be loaded right now.</p>
+									<Button variant="outline" className="mt-4" onClick={() => void refetchAnalytics()}>
+										Retry
+									</Button>
 								</CardContent>
 							</Card>
 						) : (
-							<PerformanceChartCard clicksData={clicksData} isLoading={isLoadingAnalytics} />
+							<PerformanceChartCard
+								clicksData={clicksData}
+								isLoading={isLoadingAnalytics}
+								rangeLabel={rangeLabels[filter.range]}
+							/>
 						)}
 					</div>
 
@@ -112,8 +131,14 @@ function LinkDetailPage() {
 								<TotalClicksCard
 									clicks={analyticsData?.total_clicks ?? 0}
 									isLoading={isLoadingAnalytics}
+									rangeLabel={rangeLabels[filter.range]}
 								/>
-								<TopSourcesCard referrers={processedReferrers} />
+								{!isLoadingAnalytics && (
+									<TopSourcesCard
+										referrers={processedReferrers}
+										rangeLabel={rangeLabels[filter.range]}
+									/>
+								)}
 							</>
 						)}
 						<LinkQRCode shortcode={shortcode} />

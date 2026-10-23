@@ -46,8 +46,8 @@ type LinkService interface {
 	AddTagsToLink(ctx context.Context, userID string, linkID uuid.UUID, tagIDs []uuid.UUID) (db.GetLinkByIdAndUserWithTagsRow, error)
 	RemoveTagsFromLink(ctx context.Context, userID string, linkID uuid.UUID, tagIDs []uuid.UUID) (db.GetLinkByIdAndUserWithTagsRow, error)
 	RecordClick(ctx context.Context, linkID uuid.UUID, ip, userAgent, referrer string)
-	GetLinkAnalytics(ctx context.Context, userID string, shortcode string) (*analytics.LinkAnalytics, error)
-	GetDashboardStats(ctx context.Context, userID string) (*service.DashboardStats, error)
+	GetLinkAnalytics(ctx context.Context, userID string, shortcode string, filter analytics.Filter) (*analytics.LinkAnalytics, error)
+	GetDashboardStats(ctx context.Context, userID string, filter analytics.Filter) (*service.DashboardStats, error)
 }
 
 // CheckShortcodeAvailability: GET /api/v1/shortcodes/availability?shortcode=...
@@ -482,8 +482,12 @@ func (h *LinkHandler) GetQRCode(w http.ResponseWriter, r *http.Request) {
 // GetDashboard: GET /api/v1/dashboard
 func (h *LinkHandler) GetDashboard(w http.ResponseWriter, r *http.Request) {
 	userID := mw.GetUserIDFromContext(r.Context())
+	filter, ok := h.analyticsFilter(w, r)
+	if !ok {
+		return
+	}
 
-	stats, err := h.LinkService.GetDashboardStats(r.Context(), userID)
+	stats, err := h.LinkService.GetDashboardStats(r.Context(), userID, filter)
 	if err != nil {
 		h.handleError(w, r, err)
 		return
@@ -499,8 +503,12 @@ func (h *LinkHandler) GetDashboard(w http.ResponseWriter, r *http.Request) {
 func (h *LinkHandler) GetLinkAnalytics(w http.ResponseWriter, r *http.Request) {
 	userID := mw.GetUserIDFromContext(r.Context())
 	shortcode := chi.URLParam(r, "shortcode")
+	filter, ok := h.analyticsFilter(w, r)
+	if !ok {
+		return
+	}
 
-	analyticsData, err := h.LinkService.GetLinkAnalytics(r.Context(), userID, shortcode)
+	analyticsData, err := h.LinkService.GetLinkAnalytics(r.Context(), userID, shortcode, filter)
 	if err != nil {
 		h.handleError(w, r, err)
 		return
@@ -510,6 +518,20 @@ func (h *LinkHandler) GetLinkAnalytics(w http.ResponseWriter, r *http.Request) {
 	render.JSON(w, r, dto.SuccessResponse[*analytics.LinkAnalytics]{
 		Data: analyticsData,
 	})
+}
+
+func (h *LinkHandler) analyticsFilter(w http.ResponseWriter, r *http.Request) (analytics.Filter, bool) {
+	filter, err := analytics.ParseFilter(r.URL.Query().Get("range"), r.URL.Query().Get("interval"))
+	if err == nil {
+		return filter, true
+	}
+	h.logger.Warn("Invalid analytics filter", zap.Error(err), zap.String("path", r.URL.Path))
+	render.Status(r, http.StatusBadRequest)
+	render.JSON(w, r, dto.ErrorResponse{Error: dto.ErrorObject{
+		Code: apperrors.CodeInvalidRequest, Title: "Invalid analytics filter",
+		Detail: "Use range=7d|30d|90d|12m and interval=day|week|month",
+	}})
+	return analytics.Filter{}, false
 }
 
 // handleError maps errors to HTTP responses and writes them directly

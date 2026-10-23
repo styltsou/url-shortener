@@ -585,7 +585,7 @@ func (s *LinkService) RecordClick(ctx context.Context, linkID uuid.UUID, ip, use
 }
 
 // GetLinkAnalytics returns analytics data for a link
-func (s *LinkService) GetLinkAnalytics(ctx context.Context, userID string, shortcode string) (*analytics.LinkAnalytics, error) {
+func (s *LinkService) GetLinkAnalytics(ctx context.Context, userID string, shortcode string, filter analytics.Filter) (*analytics.LinkAnalytics, error) {
 	link, err := s.queries.GetLinkByShortcodeAndUser(ctx, db.GetLinkByShortcodeAndUserParams{
 		Shortcode: shortcode,
 		UserID:    userID,
@@ -597,8 +597,7 @@ func (s *LinkService) GetLinkAnalytics(ctx context.Context, userID string, short
 		return nil, fmt.Errorf("failed to get link: %w", err)
 	}
 
-	until := time.Now()
-	since := until.AddDate(0, 0, -30)
+	since, until := filter.Bounds(time.Now())
 
 	if s.analyticsClient == nil {
 		return nil, apperrors.AnalyticsUnavailable
@@ -609,6 +608,7 @@ func (s *LinkService) GetLinkAnalytics(ctx context.Context, userID string, short
 		return nil, apperrors.AnalyticsUnavailable
 	}
 
+	result.ClicksOverTime = filter.BucketClicks(result.ClicksOverTime, since, until)
 	return result, nil
 }
 
@@ -860,7 +860,7 @@ type DashboardStats struct {
 	RecentLinks        []dto.LinkResponse         `json:"recent_links"`
 }
 
-func (s *LinkService) GetDashboardStats(ctx context.Context, userID string) (*DashboardStats, error) {
+func (s *LinkService) GetDashboardStats(ctx context.Context, userID string, filter analytics.Filter) (*DashboardStats, error) {
 	totalLinks, err := s.queries.CountUserLinks(ctx, db.CountUserLinksParams{
 		UserID:   userID,
 		IsActive: nil,
@@ -901,8 +901,7 @@ func (s *LinkService) GetDashboardStats(ctx context.Context, userID string) (*Da
 				zap.Error(err),
 			)
 		} else if len(linkIDs) > 0 {
-			until := time.Now()
-			since := until.AddDate(0, 0, -30)
+			since, until := filter.Bounds(time.Now())
 
 			ua, err := s.analyticsClient.GetUserAnalytics(ctx, linkIDs, since, until)
 			if err != nil {
@@ -912,7 +911,7 @@ func (s *LinkService) GetDashboardStats(ctx context.Context, userID string) (*Da
 				)
 			} else {
 				dashboard.TotalClicks = ua.TotalClicks
-				dashboard.ClicksOverTime = ua.ClicksOverTime
+				dashboard.ClicksOverTime = filter.BucketClicks(ua.ClicksOverTime, since, until)
 				dashboard.AnalyticsAvailable = true
 			}
 		}

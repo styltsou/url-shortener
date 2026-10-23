@@ -1210,10 +1210,15 @@ func (m *mockAnalyticsClient) Close() error {
 	return nil
 }
 
+func (m *mockAnalyticsClient) DeliveryStats() analytics.DeliveryStats {
+	return analytics.DeliveryStats{Status: analytics.DeliveryOK}
+}
+
 func TestLinkService_GetDashboardStats(t *testing.T) {
 	ctx := context.Background()
 	userID := "user_123"
 	linkID := uuid.New()
+	filter := analytics.Filter{Range: analytics.Range30Days, Interval: analytics.IntervalDay}
 
 	t.Run("successful dashboard with analytics", func(t *testing.T) {
 		mockQueries := &mockQueries{
@@ -1262,7 +1267,7 @@ func TestLinkService_GetDashboardStats(t *testing.T) {
 			analyticsClient: mockAnalytics,
 			logger:          createTestLogger(),
 		}
-		stats, err := service.GetDashboardStats(ctx, userID)
+		stats, err := service.GetDashboardStats(ctx, userID, filter)
 
 		if err != nil {
 			t.Errorf("GetDashboardStats() error = %v, want nil", err)
@@ -1302,7 +1307,7 @@ func TestLinkService_GetDashboardStats(t *testing.T) {
 			analyticsClient: nil,
 			logger:          createTestLogger(),
 		}
-		stats, err := service.GetDashboardStats(ctx, userID)
+		stats, err := service.GetDashboardStats(ctx, userID, filter)
 
 		if err != nil {
 			t.Errorf("GetDashboardStats() with nil analytics error = %v, want nil", err)
@@ -1332,7 +1337,7 @@ func TestLinkService_GetDashboardStats(t *testing.T) {
 			queries: mockQueries,
 			logger:  createTestLogger(),
 		}
-		_, err := service.GetDashboardStats(ctx, userID)
+		_, err := service.GetDashboardStats(ctx, userID, filter)
 
 		if err == nil {
 			t.Errorf("GetDashboardStats() expected error for count failure")
@@ -1353,7 +1358,7 @@ func TestLinkService_GetDashboardStats(t *testing.T) {
 			queries: mockQueries,
 			logger:  createTestLogger(),
 		}
-		_, err := service.GetDashboardStats(ctx, userID)
+		_, err := service.GetDashboardStats(ctx, userID, filter)
 
 		if err == nil {
 			t.Errorf("GetDashboardStats() expected error for active count failure")
@@ -1387,7 +1392,7 @@ func TestLinkService_GetDashboardStats(t *testing.T) {
 			analyticsClient: mockAnalytics,
 			logger:          createTestLogger(),
 		}
-		stats, err := service.GetDashboardStats(ctx, userID)
+		stats, err := service.GetDashboardStats(ctx, userID, filter)
 
 		if err != nil {
 			t.Errorf("GetDashboardStats() should not fail on analytics error, got: %v", err)
@@ -1406,6 +1411,7 @@ func TestLinkService_GetLinkAnalytics(t *testing.T) {
 	userID := "user_123"
 	shortcode := "abc123"
 	linkID := uuid.New()
+	filter := analytics.Filter{Range: analytics.Range30Days, Interval: analytics.IntervalDay}
 
 	t.Run("successful analytics", func(t *testing.T) {
 		mockQueries := &mockQueries{
@@ -1442,7 +1448,7 @@ func TestLinkService_GetLinkAnalytics(t *testing.T) {
 			analyticsClient: mockAnalytics,
 			logger:          createTestLogger(),
 		}
-		result, err := service.GetLinkAnalytics(ctx, userID, shortcode)
+		result, err := service.GetLinkAnalytics(ctx, userID, shortcode, filter)
 
 		if err != nil {
 			t.Errorf("GetLinkAnalytics() error = %v, want nil", err)
@@ -1463,7 +1469,7 @@ func TestLinkService_GetLinkAnalytics(t *testing.T) {
 			queries: mockQueries,
 			logger:  createTestLogger(),
 		}
-		_, err := service.GetLinkAnalytics(ctx, userID, shortcode)
+		_, err := service.GetLinkAnalytics(ctx, userID, shortcode, filter)
 
 		if err == nil {
 			t.Errorf("GetLinkAnalytics() expected error for link not found")
@@ -1494,7 +1500,7 @@ func TestLinkService_GetLinkAnalytics(t *testing.T) {
 			analyticsClient: mockAnalytics,
 			logger:          createTestLogger(),
 		}
-		_, err := service.GetLinkAnalytics(ctx, userID, shortcode)
+		_, err := service.GetLinkAnalytics(ctx, userID, shortcode, filter)
 
 		if err == nil {
 			t.Errorf("GetLinkAnalytics() expected error for analytics failure")
@@ -1510,7 +1516,7 @@ func TestLinkService_GetLinkAnalytics(t *testing.T) {
 				return db.GetLinkByShortcodeAndUserRow{ID: linkID}, nil
 			}},
 		}
-		_, err := service.GetLinkAnalytics(ctx, userID, shortcode)
+		_, err := service.GetLinkAnalytics(ctx, userID, shortcode, filter)
 		if !errors.Is(err, apperrors.AnalyticsUnavailable) {
 			t.Errorf("GetLinkAnalytics() error = %v, want AnalyticsUnavailable", err)
 		}

@@ -5,15 +5,20 @@ import { LoadingState } from "@/components/shared/loading-state";
 interface PerformanceChartCardProps {
 	clicksData: Array<{ name: string; clicks: number }>;
 	isLoading?: boolean;
+	rangeLabel?: string;
 }
 
-export function PerformanceChartCard({ clicksData, isLoading }: PerformanceChartCardProps) {
+export function PerformanceChartCard({
+	clicksData,
+	isLoading,
+	rangeLabel = "30 days",
+}: PerformanceChartCardProps) {
 	if (isLoading) {
 		return (
 			<Card>
 				<CardHeader>
 					<CardTitle className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-						Clicks Over Time (30d)
+						Clicks Over Time (last {rangeLabel})
 					</CardTitle>
 				</CardHeader>
 				<CardContent>
@@ -27,12 +32,12 @@ export function PerformanceChartCard({ clicksData, isLoading }: PerformanceChart
 		<Card>
 			<CardHeader>
 				<CardTitle className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-					Clicks Over Time (30d)
+					Clicks Over Time (last {rangeLabel})
 				</CardTitle>
 			</CardHeader>
 			<CardContent>
 				{clicksData.every((day) => day.clicks === 0) ? (
-					<p className="text-sm text-muted-foreground">No clicks in the last 30 days.</p>
+					<p className="text-sm text-muted-foreground">No clicks in the last {rangeLabel}.</p>
 				) : (
 					<ClicksGraph data={clicksData} />
 				)}

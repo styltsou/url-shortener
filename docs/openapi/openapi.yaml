@@ -363,9 +363,10 @@ components:
           example:
             postgres: ok
             redis: degraded
+            analytics: degraded
         degraded:
           type: boolean
-          description: True when optional dependencies are unavailable
+          description: True when Redis is unavailable or click delivery has failed since this process started
       required:
       - status
       - service
@@ -376,6 +377,7 @@ components:
         date:
           type: string
           format: date-time
+          description: Start of the selected day, Monday-starting week, or month in UTC
         clicks:
           type: integer
           minimum: 0
@@ -431,7 +433,7 @@ components:
             total_clicks:
               type: integer
               minimum: 0
-              description: Clicks in the last 30 days; meaningful only when analytics_available is true
+              description: Clicks in the selected range; meaningful only when analytics_available is true
             analytics_available:
               type: boolean
               description: Whether the click analytics query completed successfully
@@ -536,7 +538,7 @@ paths:
       tags:
       - Public
       summary: Readiness check
-      description: Checks required dependencies. Postgres failure returns 503; Redis failure is reported as degraded.
+      description: Checks required dependencies. Postgres failure returns 503; Redis failure or analytics delivery loss is reported as degraded. Analytics may also be disabled when ClickHouse is not configured.
       operationId: healthReady
       responses:
         '200':
@@ -595,6 +597,20 @@ paths:
       operationId: getDashboard
       security:
       - BearerAuth: []
+      parameters:
+      - name: range
+        in: query
+        description: Calendar range including today or the current month; applies to click totals and chart data
+        schema:
+          type: string
+          enum: [7d, 30d, 90d, 12m]
+          default: 30d
+      - name: interval
+        in: query
+        description: Chart bucket size; defaults to day for 7d/30d, week for 90d, and month for 12m
+        schema:
+          type: string
+          enum: [day, week, month]
       responses:
         '200':
           description: Link counts, recent links and available click analytics
@@ -604,6 +620,12 @@ paths:
                 $ref: '#/components/schemas/DashboardResponse'
         '401':
           description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '400':
+          description: Invalid analytics range or interval
           content:
             application/json:
               schema:
@@ -839,15 +861,34 @@ paths:
         required: true
         schema:
           type: string
+      - name: range
+        in: query
+        description: Calendar range including today or the current month; applies to totals, referrers, user agents, and chart data
+        schema:
+          type: string
+          enum: [7d, 30d, 90d, 12m]
+          default: 30d
+      - name: interval
+        in: query
+        description: Chart bucket size; defaults to day for 7d/30d, week for 90d, and month for 12m
+        schema:
+          type: string
+          enum: [day, week, month]
       responses:
         '200':
-          description: Click counts and breakdowns for the last 30 days
+          description: Click counts and breakdowns for the selected range
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/LinkAnalyticsResponse'
         '401':
           description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '400':
+          description: Invalid analytics range or interval
           content:
             application/json:
               schema:

@@ -2,6 +2,7 @@ package analytics
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -16,6 +17,7 @@ type fakeClickConn struct {
 	inserts atomic.Int32
 	closed  atomic.Bool
 	onExec  func(context.Context)
+	execErr error
 }
 
 func (c *fakeClickConn) Exec(ctx context.Context, _ string, _ ...any) error {
@@ -24,6 +26,9 @@ func (c *fakeClickConn) Exec(ctx context.Context, _ string, _ ...any) error {
 	}
 	if err := ctx.Err(); err != nil {
 		return err
+	}
+	if c.execErr != nil {
+		return c.execErr
 	}
 	c.inserts.Add(1)
 	return nil
@@ -57,6 +62,9 @@ func TestClickSurvivesCanceledRequestAndCloseDrains(t *testing.T) {
 	if got := conn.inserts.Load(); got != 20 {
 		t.Fatalf("inserted %d of 20 queued clicks", got)
 	}
+	if stats := c.DeliveryStats(); stats.Submitted != 20 || stats.Written != 20 || stats.Lost() != 0 {
+		t.Fatalf("delivery stats = %+v, want 20 written and no loss", stats)
+	}
 	if !conn.closed.Load() {
 		t.Fatal("connection not closed")
 	}
@@ -66,6 +74,21 @@ func TestClickSurvivesCanceledRequestAndCloseDrains(t *testing.T) {
 	c.RecordClick(context.Background(), ClickEvent{LinkID: uuid.New()})
 	if got := conn.inserts.Load(); got != 20 {
 		t.Fatalf("accepted click after close: %d", got)
+	}
+	if stats := c.DeliveryStats(); stats.LostClosed != 1 {
+		t.Fatalf("lost after close = %d, want 1", stats.LostClosed)
+	}
+}
+
+func TestFailedClickInsertIsCounted(t *testing.T) {
+	c := testClickClient(t, &fakeClickConn{execErr: errors.New("clickhouse unavailable")}, 1)
+	c.RecordClick(context.Background(), ClickEvent{LinkID: uuid.New()})
+	if err := c.Close(); err != nil {
+		t.Fatal(err)
+	}
+	stats := c.DeliveryStats()
+	if stats.Submitted != 1 || stats.Written != 0 || stats.LostInsert != 1 || stats.Status != DeliveryDegraded {
+		t.Fatalf("delivery stats = %+v, want one failed insert", stats)
 	}
 }
 
@@ -89,6 +112,9 @@ func TestClickQueueFullAndConcurrentClose(t *testing.T) {
 	if len(c.clickChan) != 1 {
 		t.Fatalf("queue length = %d", len(c.clickChan))
 	}
+	if stats := c.DeliveryStats(); stats.LostQueueFull != 1 || stats.Status != DeliveryDegraded {
+		t.Fatalf("delivery stats = %+v, want one full-queue loss", stats)
+	}
 	var producers sync.WaitGroup
 	for range 10 {
 		producers.Add(1)
@@ -109,5 +135,9 @@ func TestClickQueueFullAndConcurrentClose(t *testing.T) {
 	}
 	if !conn.closed.Load() {
 		t.Fatal("connection was not closed")
+	}
+	stats := c.DeliveryStats()
+	if stats.Submitted != stats.Written+stats.Lost() {
+		t.Fatalf("delivery accounting incomplete: %+v", stats)
 	}
 }

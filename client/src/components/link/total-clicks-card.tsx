@@ -3,15 +3,20 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 interface TotalClicksCardProps {
 	clicks: number;
 	isLoading?: boolean;
+	rangeLabel?: string;
 }
 
-export function TotalClicksCard({ clicks, isLoading }: TotalClicksCardProps) {
+export function TotalClicksCard({
+	clicks,
+	isLoading,
+	rangeLabel = "30 days",
+}: TotalClicksCardProps) {
 	if (isLoading) {
 		return (
 			<Card>
 				<CardHeader>
 					<CardTitle className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-						Clicks (30d)
+						Clicks (last {rangeLabel})
 					</CardTitle>
 				</CardHeader>
 				<CardContent>
@@ -27,7 +32,7 @@ export function TotalClicksCard({ clicks, isLoading }: TotalClicksCardProps) {
 		<Card>
 			<CardHeader>
 				<CardTitle className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-					Clicks (30d)
+					Clicks (last {rangeLabel})
 				</CardTitle>
 			</CardHeader>
 			<CardContent>

@@ -116,6 +116,7 @@ Readiness behavior:
 
 - PostgreSQL unavailable or required tables missing: returns `503`.
 - Redis unavailable: returns `200` with `degraded: true` because redirects still work through Postgres.
+- Analytics is `disabled` when ClickHouse is not configured, `ok` when click delivery has not failed, or `degraded` after a startup connection failure or click loss. Analytics degradation keeps HTTP readiness at `200` while PostgreSQL is healthy. Check structured logs for cumulative lost-click counts; a lost event cannot be recovered from this in-memory queue.
 
 ## Post-Deploy Smoke Test
 

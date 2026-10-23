@@ -6,15 +6,21 @@ interface DashboardChartProps {
 	data: Array<{ name: string; clicks: number }>;
 	isLoading?: boolean;
 	analyticsAvailable: boolean;
+	rangeLabel?: string;
 }
 
-export function DashboardChart({ data, isLoading, analyticsAvailable }: DashboardChartProps) {
+export function DashboardChart({
+	data,
+	isLoading,
+	analyticsAvailable,
+	rangeLabel = "30 days",
+}: DashboardChartProps) {
 	if (isLoading) {
 		return (
 			<Card>
 				<CardHeader>
 					<CardTitle className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-						Clicks Over Time (30d)
+						Clicks Over Time (last {rangeLabel})
 					</CardTitle>
 				</CardHeader>
 				<CardContent>
@@ -29,7 +35,7 @@ export function DashboardChart({ data, isLoading, analyticsAvailable }: Dashboar
 			<Card>
 				<CardHeader>
 					<CardTitle className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-						Clicks Over Time (30d)
+						Clicks Over Time (last {rangeLabel})
 					</CardTitle>
 				</CardHeader>
 				<CardContent>
@@ -46,11 +52,11 @@ export function DashboardChart({ data, isLoading, analyticsAvailable }: Dashboar
 			<Card>
 				<CardHeader>
 					<CardTitle className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-						Clicks Over Time (30d)
+						Clicks Over Time (last {rangeLabel})
 					</CardTitle>
 				</CardHeader>
 				<CardContent>
-					<p className="text-sm text-muted-foreground">No clicks in the last 30 days.</p>
+					<p className="text-sm text-muted-foreground">No clicks in the last {rangeLabel}.</p>
 				</CardContent>
 			</Card>
 		);
@@ -60,7 +66,7 @@ export function DashboardChart({ data, isLoading, analyticsAvailable }: Dashboar
 		<Card>
 			<CardHeader>
 				<CardTitle className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-					Clicks Over Time (30d)
+					Clicks Over Time (last {rangeLabel})
 				</CardTitle>
 			</CardHeader>
 			<CardContent>

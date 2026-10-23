@@ -8,6 +8,7 @@ import (
 	"github.com/go-chi/render"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
+	"github.com/styltsou/url-shortener/server/pkg/analytics"
 	"github.com/styltsou/url-shortener/server/pkg/logger"
 	"go.uber.org/zap"
 )
@@ -15,9 +16,10 @@ import (
 const healthUnavailable = "unavailable"
 
 type HealthHandler struct {
-	pool   *pgxpool.Pool
-	redis  *redis.Client
-	logger logger.Logger
+	pool      *pgxpool.Pool
+	redis     *redis.Client
+	analytics analytics.DeliveryReporter
+	logger    logger.Logger
 }
 
 type HealthResponse struct {
@@ -27,8 +29,8 @@ type HealthResponse struct {
 	Degraded bool              `json:"degraded,omitempty"`
 }
 
-func NewHealthHandler(pool *pgxpool.Pool, redis *redis.Client, logger logger.Logger) *HealthHandler {
-	return &HealthHandler{pool: pool, redis: redis, logger: logger}
+func NewHealthHandler(pool *pgxpool.Pool, redis *redis.Client, analyticsClient analytics.DeliveryReporter, logger logger.Logger) *HealthHandler {
+	return &HealthHandler{pool: pool, redis: redis, analytics: analyticsClient, logger: logger}
 }
 
 func (h *HealthHandler) Live(w http.ResponseWriter, r *http.Request) {
@@ -81,6 +83,15 @@ func (h *HealthHandler) Ready(w http.ResponseWriter, r *http.Request) {
 			h.logger.Warn("Redis readiness check failed", zap.Error(err))
 		} else {
 			checks["redis"] = "ok"
+		}
+	}
+
+	checks["analytics"] = analytics.DeliveryDisabled
+	if h.analytics != nil {
+		stats := h.analytics.DeliveryStats()
+		checks["analytics"] = stats.Status
+		if stats.Status == analytics.DeliveryDegraded {
+			degraded = true
 		}
 	}
 

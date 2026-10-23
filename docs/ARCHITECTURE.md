@@ -201,7 +201,7 @@ Rate limiting is configured with `RATE_LIMIT_REQUESTS` and `RATE_LIMIT_WINDOW_SE
 Health checks:
 
 - `GET /api/v1/health` and `GET /api/v1/health/live` are liveness checks for process availability.
-- `GET /api/v1/health/ready` checks PostgreSQL connectivity and required tables. PostgreSQL failure or missing tables returns `503`; Redis failure is reported as degraded because the service can run without cache.
+- `GET /api/v1/health/ready` checks PostgreSQL connectivity and required tables. PostgreSQL failure or missing tables returns `503`; Redis failure and analytics delivery loss are reported as degraded because redirects can continue.
 
 ## Data Flow
 

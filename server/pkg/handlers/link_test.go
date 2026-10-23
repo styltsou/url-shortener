@@ -39,8 +39,8 @@ type mockLinkService struct {
 	AddTagsToLinkFunc                 func(ctx context.Context, userID string, linkID uuid.UUID, tagIDs []uuid.UUID) (db.GetLinkByIdAndUserWithTagsRow, error)
 	RemoveTagsFromLinkFunc            func(ctx context.Context, userID string, linkID uuid.UUID, tagIDs []uuid.UUID) (db.GetLinkByIdAndUserWithTagsRow, error)
 	RecordClickFunc                   func(ctx context.Context, linkID uuid.UUID, ip, userAgent, referrer string)
-	GetLinkAnalyticsFunc              func(ctx context.Context, userID string, shortcode string) (*analytics.LinkAnalytics, error)
-	GetDashboardStatsFunc             func(ctx context.Context, userID string) (*service.DashboardStats, error)
+	GetLinkAnalyticsFunc              func(ctx context.Context, userID string, shortcode string, filter analytics.Filter) (*analytics.LinkAnalytics, error)
+	GetDashboardStatsFunc             func(ctx context.Context, userID string, filter analytics.Filter) (*service.DashboardStats, error)
 }
 
 func (m *mockLinkService) ShortcodeAvailable(ctx context.Context, shortcode string) (bool, error) {
@@ -140,16 +140,16 @@ func (m *mockLinkService) RecordClick(ctx context.Context, linkID uuid.UUID, ip,
 	}
 }
 
-func (m *mockLinkService) GetLinkAnalytics(ctx context.Context, userID string, shortcode string) (*analytics.LinkAnalytics, error) {
+func (m *mockLinkService) GetLinkAnalytics(ctx context.Context, userID string, shortcode string, filter analytics.Filter) (*analytics.LinkAnalytics, error) {
 	if m.GetLinkAnalyticsFunc != nil {
-		return m.GetLinkAnalyticsFunc(ctx, userID, shortcode)
+		return m.GetLinkAnalyticsFunc(ctx, userID, shortcode, filter)
 	}
 	return &analytics.LinkAnalytics{}, nil
 }
 
-func (m *mockLinkService) GetDashboardStats(ctx context.Context, userID string) (*service.DashboardStats, error) {
+func (m *mockLinkService) GetDashboardStats(ctx context.Context, userID string, filter analytics.Filter) (*service.DashboardStats, error) {
 	if m.GetDashboardStatsFunc != nil {
-		return m.GetDashboardStatsFunc(ctx, userID)
+		return m.GetDashboardStatsFunc(ctx, userID, filter)
 	}
 	return &service.DashboardStats{}, errors.New("not implemented")
 }
@@ -1459,9 +1459,12 @@ func TestLinkHandler_GetDashboard(t *testing.T) {
 	t.Run("successful dashboard", func(t *testing.T) {
 		handler := &LinkHandler{
 			LinkService: &mockLinkService{
-				GetDashboardStatsFunc: func(ctx context.Context, uid string) (*service.DashboardStats, error) {
+				GetDashboardStatsFunc: func(ctx context.Context, uid string, filter analytics.Filter) (*service.DashboardStats, error) {
 					if uid != userID {
 						t.Errorf("GetDashboardStats called with wrong userID: got %s, want %s", uid, userID)
+					}
+					if filter.Range != analytics.Range30Days || filter.Interval != analytics.IntervalDay {
+						t.Errorf("dashboard default filter = %+v, want 30d/day", filter)
 					}
 					return &service.DashboardStats{
 						TotalLinks:         10,
@@ -1504,10 +1507,21 @@ func TestLinkHandler_GetDashboard(t *testing.T) {
 		}
 	})
 
+	t.Run("invalid time range", func(t *testing.T) {
+		handler := &LinkHandler{LinkService: &mockLinkService{}, logger: createTestLogger()}
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard?range=all", nil)
+		req = req.WithContext(middleware.WithUserID(req.Context(), userID))
+		w := httptest.NewRecorder()
+		handler.GetDashboard(w, req)
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("GetDashboard() status = %d, want 400", w.Code)
+		}
+	})
+
 	t.Run("service error", func(t *testing.T) {
 		handler := &LinkHandler{
 			LinkService: &mockLinkService{
-				GetDashboardStatsFunc: func(ctx context.Context, uid string) (*service.DashboardStats, error) {
+				GetDashboardStatsFunc: func(ctx context.Context, uid string, filter analytics.Filter) (*service.DashboardStats, error) {
 					return nil, errors.New("database error")
 				},
 			},
@@ -1533,7 +1547,7 @@ func TestLinkHandler_GetLinkAnalytics(t *testing.T) {
 
 	t.Run("analytics unavailable", func(t *testing.T) {
 		handler := &LinkHandler{
-			LinkService: &mockLinkService{GetLinkAnalyticsFunc: func(context.Context, string, string) (*analytics.LinkAnalytics, error) {
+			LinkService: &mockLinkService{GetLinkAnalyticsFunc: func(context.Context, string, string, analytics.Filter) (*analytics.LinkAnalytics, error) {
 				return nil, apperrors.AnalyticsUnavailable
 			}},
 			logger: createTestLogger(),
@@ -1559,12 +1573,15 @@ func TestLinkHandler_GetLinkAnalytics(t *testing.T) {
 	t.Run("successful analytics", func(t *testing.T) {
 		handler := &LinkHandler{
 			LinkService: &mockLinkService{
-				GetLinkAnalyticsFunc: func(ctx context.Context, uid string, code string) (*analytics.LinkAnalytics, error) {
+				GetLinkAnalyticsFunc: func(ctx context.Context, uid string, code string, filter analytics.Filter) (*analytics.LinkAnalytics, error) {
 					if uid != userID {
 						t.Errorf("GetLinkAnalytics called with wrong userID: got %s, want %s", uid, userID)
 					}
 					if code != shortcode {
 						t.Errorf("GetLinkAnalytics called with wrong shortcode: got %s, want %s", code, shortcode)
+					}
+					if filter.Range != analytics.Range90Days || filter.Interval != analytics.IntervalMonth {
+						t.Errorf("link filter = %+v, want 90d/month", filter)
 					}
 					return &analytics.LinkAnalytics{
 						TotalClicks:    42,
@@ -1577,7 +1594,7 @@ func TestLinkHandler_GetLinkAnalytics(t *testing.T) {
 			logger: createTestLogger(),
 		}
 
-		req := httptest.NewRequest(http.MethodGet, "/api/v1/links/"+shortcode+"/analytics", nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/links/"+shortcode+"/analytics?range=90d&interval=month", nil)
 		ctx := middleware.WithUserID(req.Context(), userID)
 		req = req.WithContext(ctx)
 		w := httptest.NewRecorder()
@@ -1602,7 +1619,7 @@ func TestLinkHandler_GetLinkAnalytics(t *testing.T) {
 	t.Run("link not found", func(t *testing.T) {
 		handler := &LinkHandler{
 			LinkService: &mockLinkService{
-				GetLinkAnalyticsFunc: func(ctx context.Context, uid string, code string) (*analytics.LinkAnalytics, error) {
+				GetLinkAnalyticsFunc: func(ctx context.Context, uid string, code string, filter analytics.Filter) (*analytics.LinkAnalytics, error) {
 					return nil, apperrors.LinkNotFound
 				},
 			},
@@ -1626,7 +1643,7 @@ func TestLinkHandler_GetLinkAnalytics(t *testing.T) {
 	t.Run("service error", func(t *testing.T) {
 		handler := &LinkHandler{
 			LinkService: &mockLinkService{
-				GetLinkAnalyticsFunc: func(ctx context.Context, uid string, code string) (*analytics.LinkAnalytics, error) {
+				GetLinkAnalyticsFunc: func(ctx context.Context, uid string, code string, filter analytics.Filter) (*analytics.LinkAnalytics, error) {
 					return nil, errors.New("analytics service error")
 				},
 			},

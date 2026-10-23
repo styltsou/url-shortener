@@ -4,7 +4,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import { DashboardChart } from "./dashboard-chart";
 import { DashboardStats } from "./dashboard-stats";
 import { TotalClicksCard } from "@/components/link/total-clicks-card";
-import { formatAnalyticsDate } from "@/lib/date-utils";
+import { formatAnalyticsBucketDate, formatAnalyticsDate } from "@/lib/date-utils";
+import { analyticsQueryString } from "@/lib/analytics-filter";
 
 afterEach(cleanup);
 
@@ -31,11 +32,20 @@ describe("analytics display", () => {
 
 	it("labels the link click total with its reporting period", () => {
 		render(<TotalClicksCard clicks={0} />);
-		expect(screen.getByText("Clicks (30d)")).toBeTruthy();
+		expect(screen.getByText("Clicks (last 30 days)")).toBeTruthy();
+	});
+
+	it("labels a selected range and serializes both analytics filters", () => {
+		render(<TotalClicksCard clicks={12} rangeLabel="12 months" />);
+		expect(screen.getByText("Clicks (last 12 months)")).toBeTruthy();
+		expect(analyticsQueryString({ range: "12m", interval: "month" })).toBe(
+			"range=12m&interval=month",
+		);
 	});
 
 	it("formats analytics dates as calendar dates instead of repeating weekdays", () => {
 		expect(formatAnalyticsDate("2026-10-20T00:00:00Z")).toBe("Oct 20");
 		expect(formatAnalyticsDate("2026-10-21T00:00:00Z")).toBe("Oct 21");
+		expect(formatAnalyticsBucketDate("2026-10-01T00:00:00Z", "month")).toBe("Oct 2026");
 	});
 });
