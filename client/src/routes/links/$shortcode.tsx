@@ -20,7 +20,7 @@ import { formatAnalyticsBucketDate } from "@/lib/date-utils";
 import { AnalyticsFilterControls } from "@/components/shared/analytics-filter-controls";
 import {
 	DEFAULT_ANALYTICS_FILTER,
-	rangeLabels,
+	analyticsPeriodLabel,
 	type AnalyticsFilter,
 } from "@/lib/analytics-filter";
 import { useState } from "react";
@@ -120,7 +120,7 @@ function LinkDetailPage() {
 							<PerformanceChartCard
 								clicksData={clicksData}
 								isLoading={isLoadingAnalytics}
-								rangeLabel={rangeLabels[filter.range]}
+								periodLabel={analyticsPeriodLabel(filter)}
 							/>
 						)}
 					</div>
@@ -131,12 +131,12 @@ function LinkDetailPage() {
 								<TotalClicksCard
 									clicks={analyticsData?.total_clicks ?? 0}
 									isLoading={isLoadingAnalytics}
-									rangeLabel={rangeLabels[filter.range]}
+									periodLabel={analyticsPeriodLabel(filter)}
 								/>
 								{!isLoadingAnalytics && (
 									<TopSourcesCard
 										referrers={processedReferrers}
-										rangeLabel={rangeLabels[filter.range]}
+										periodLabel={analyticsPeriodLabel(filter)}
 									/>
 								)}
 							</>

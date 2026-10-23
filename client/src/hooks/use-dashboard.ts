@@ -40,7 +40,7 @@ export function useDashboard(filter: AnalyticsFilter = DEFAULT_ANALYTICS_FILTER)
 	const authUserId = isLoaded && isSignedIn ? userId : null;
 
 	return useQuery({
-		queryKey: [...dashboardKeys.all, authUserId, filter.range, filter.interval],
+		queryKey: [...dashboardKeys.all, authUserId, filter.range, filter.interval, filter.from, filter.to],
 		enabled: !!authUserId,
 		queryFn: async () => {
 			const token = await getToken();

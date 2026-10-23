@@ -24,7 +24,7 @@ export function useAnalytics(shortcode: string, filter: AnalyticsFilter = DEFAUL
 	const authUserId = isLoaded && isSignedIn ? userId : null;
 
 	return useQuery({
-		queryKey: [...analyticsKeys.detail(shortcode), authUserId, filter.range, filter.interval],
+		queryKey: [...analyticsKeys.detail(shortcode), authUserId, filter.range, filter.interval, filter.from, filter.to],
 		queryFn: async () => {
 			const token = await getToken();
 			const response = await apiClient.get<{ data: AnalyticsData }>(

@@ -6,7 +6,7 @@ interface DashboardStatsProps {
 	activeLinks: number;
 	totalClicks: number;
 	analyticsAvailable: boolean;
-	rangeLabel?: string;
+	periodLabel?: string;
 }
 
 export function DashboardStats({
@@ -14,7 +14,7 @@ export function DashboardStats({
 	activeLinks,
 	totalClicks,
 	analyticsAvailable,
-	rangeLabel = "30 days",
+	periodLabel = "last 30 days",
 }: DashboardStatsProps) {
 	return (
 		<div className="grid gap-4 sm:grid-cols-3">
@@ -49,7 +49,7 @@ export function DashboardStats({
 			<Card>
 				<CardHeader className="flex flex-row items-center justify-between pb-2">
 					<CardTitle className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-						Clicks (last {rangeLabel})
+						Clicks ({periodLabel})
 					</CardTitle>
 					<MousePointerClick className="h-4 w-4 text-muted-foreground" />
 				</CardHeader>

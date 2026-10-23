@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { DashboardChart } from "./dashboard-chart";
 import { DashboardStats } from "./dashboard-stats";
 import { TotalClicksCard } from "@/components/link/total-clicks-card";
+import { AnalyticsFilterControls } from "@/components/shared/analytics-filter-controls";
 import { formatAnalyticsBucketDate, formatAnalyticsDate } from "@/lib/date-utils";
-import { analyticsQueryString } from "@/lib/analytics-filter";
+import { analyticsPeriodLabel, analyticsQueryString } from "@/lib/analytics-filter";
 
 afterEach(cleanup);
 
@@ -36,11 +37,44 @@ describe("analytics display", () => {
 	});
 
 	it("labels a selected range and serializes both analytics filters", () => {
-		render(<TotalClicksCard clicks={12} rangeLabel="12 months" />);
+		render(<TotalClicksCard clicks={12} periodLabel="last 12 months" />);
 		expect(screen.getByText("Clicks (last 12 months)")).toBeTruthy();
 		expect(analyticsQueryString({ range: "12m", interval: "month" })).toBe(
 			"range=12m&interval=month",
 		);
+	});
+
+	it("serializes and labels a custom period, including one day", () => {
+		const period = { range: "custom", interval: "day", from: "2026-10-20", to: "2026-10-20" } as const;
+		expect(analyticsQueryString(period)).toBe(
+			"range=custom&interval=day&from=2026-10-20&to=2026-10-20",
+		);
+		expect(analyticsPeriodLabel(period)).toBe("Oct 20, 2026");
+		expect(analyticsPeriodLabel({ ...period, to: "2026-10-23" })).toBe(
+			"Oct 20, 2026 – Oct 23, 2026",
+		);
+		render(<TotalClicksCard clicks={5} periodLabel={analyticsPeriodLabel(period)} />);
+		expect(screen.getByText("Clicks (Oct 20, 2026)")).toBeTruthy();
+	});
+
+	it("applies valid custom dates and blocks reversed dates", () => {
+		const onChange = vi.fn();
+		render(
+			<AnalyticsFilterControls
+				filter={{ range: "custom", interval: "day", from: "2026-10-20", to: "2026-10-20" }}
+				onChange={onChange}
+			/>,
+		);
+		fireEvent.change(screen.getByLabelText("To"), { target: { value: "2026-10-23" } });
+		fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+		expect(onChange).toHaveBeenCalledWith({
+			range: "custom",
+			interval: "day",
+			from: "2026-10-20",
+			to: "2026-10-23",
+		});
+		fireEvent.change(screen.getByLabelText("From"), { target: { value: "2026-10-24" } });
+		expect((screen.getByRole("button", { name: "Apply" }) as HTMLButtonElement).disabled).toBe(true);
 	});
 
 	it("formats analytics dates as calendar dates instead of repeating weekdays", () => {

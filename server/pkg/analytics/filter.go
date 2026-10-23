@@ -13,6 +13,7 @@ const (
 	Range30Days   Range = "30d"
 	Range90Days   Range = "90d"
 	Range12Months Range = "12m"
+	RangeCustom   Range = "custom"
 
 	IntervalDay   Interval = "day"
 	IntervalWeek  Interval = "week"
@@ -22,9 +23,11 @@ const (
 type Filter struct {
 	Range    Range
 	Interval Interval
+	From     time.Time
+	To       time.Time
 }
 
-func ParseFilter(rangeValue, intervalValue string) (Filter, error) {
+func ParseFilter(rangeValue, intervalValue, fromValue, toValue string) (Filter, error) {
 	if rangeValue == "" {
 		rangeValue = string(Range30Days)
 	}
@@ -42,8 +45,30 @@ func ParseFilter(rangeValue, intervalValue string) (Filter, error) {
 		if filter.Interval == "" {
 			filter.Interval = IntervalMonth
 		}
+	case RangeCustom:
+		if filter.Interval == "" {
+			filter.Interval = IntervalDay
+		}
+		if fromValue == "" || toValue == "" {
+			return Filter{}, fmt.Errorf("custom analytics range requires from and to dates")
+		}
+		var err error
+		filter.From, err = time.Parse(time.DateOnly, fromValue)
+		if err != nil {
+			return Filter{}, fmt.Errorf("invalid analytics from date: %w", err)
+		}
+		filter.To, err = time.Parse(time.DateOnly, toValue)
+		if err != nil {
+			return Filter{}, fmt.Errorf("invalid analytics to date: %w", err)
+		}
+		if filter.To.Before(filter.From) || filter.To.Sub(filter.From) > 365*24*time.Hour {
+			return Filter{}, fmt.Errorf("custom analytics range must span 1 to 366 days")
+		}
 	default:
 		return Filter{}, fmt.Errorf("unsupported analytics range %q", rangeValue)
+	}
+	if filter.Range != RangeCustom && (fromValue != "" || toValue != "") {
+		return Filter{}, fmt.Errorf("analytics dates require range=custom")
 	}
 	if filter.Interval != IntervalDay && filter.Interval != IntervalWeek && filter.Interval != IntervalMonth {
 		return Filter{}, fmt.Errorf("unsupported analytics interval %q", intervalValue)
@@ -55,6 +80,8 @@ func (f Filter) Bounds(now time.Time) (time.Time, time.Time) {
 	until := now.UTC()
 	today := time.Date(until.Year(), until.Month(), until.Day(), 0, 0, 0, 0, time.UTC)
 	switch f.Range {
+	case RangeCustom:
+		return f.From, f.To.AddDate(0, 0, 1).Add(-time.Nanosecond)
 	case Range7Days:
 		return today.AddDate(0, 0, -6), until
 	case Range90Days:

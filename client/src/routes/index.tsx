@@ -13,7 +13,7 @@ import { formatAnalyticsBucketDate } from "@/lib/date-utils";
 import { AnalyticsFilterControls } from "@/components/shared/analytics-filter-controls";
 import {
 	DEFAULT_ANALYTICS_FILTER,
-	rangeLabels,
+	analyticsPeriodLabel,
 	type AnalyticsFilter,
 } from "@/lib/analytics-filter";
 import { useState } from "react";
@@ -111,7 +111,7 @@ function DashboardPage() {
 								activeLinks={data?.active_links ?? 0}
 								totalClicks={data?.total_clicks ?? 0}
 								analyticsAvailable={data?.analytics_available ?? false}
-								rangeLabel={rangeLabels[filter.range]}
+								periodLabel={analyticsPeriodLabel(filter)}
 							/>
 						</div>
 
@@ -119,7 +119,7 @@ function DashboardPage() {
 							<DashboardChart
 								data={clicksOverTime}
 								analyticsAvailable={data?.analytics_available ?? false}
-								rangeLabel={rangeLabels[filter.range]}
+								periodLabel={analyticsPeriodLabel(filter)}
 							/>
 						</div>
 

@@ -1518,6 +1518,17 @@ func TestLinkHandler_GetDashboard(t *testing.T) {
 		}
 	})
 
+	t.Run("invalid custom dates", func(t *testing.T) {
+		handler := &LinkHandler{LinkService: &mockLinkService{}, logger: createTestLogger()}
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard?range=custom&from=2026-10-23&to=2026-10-20", nil)
+		req = req.WithContext(middleware.WithUserID(req.Context(), userID))
+		w := httptest.NewRecorder()
+		handler.GetDashboard(w, req)
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("GetDashboard() status = %d, want 400", w.Code)
+		}
+	})
+
 	t.Run("service error", func(t *testing.T) {
 		handler := &LinkHandler{
 			LinkService: &mockLinkService{
@@ -1544,6 +1555,29 @@ func TestLinkHandler_GetDashboard(t *testing.T) {
 func TestLinkHandler_GetLinkAnalytics(t *testing.T) {
 	userID := "user_123"
 	shortcode := "abc123"
+
+	t.Run("custom single day is passed to service", func(t *testing.T) {
+		handler := &LinkHandler{
+			LinkService: &mockLinkService{
+				GetLinkAnalyticsFunc: func(_ context.Context, _ string, _ string, filter analytics.Filter) (*analytics.LinkAnalytics, error) {
+					if filter.Range != analytics.RangeCustom || filter.Interval != analytics.IntervalDay || filter.From.Format(time.DateOnly) != "2026-10-20" || filter.To.Format(time.DateOnly) != "2026-10-20" {
+						t.Errorf("custom analytics filter = %+v", filter)
+					}
+					return &analytics.LinkAnalytics{}, nil
+				},
+			},
+			logger: createTestLogger(),
+		}
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/links/"+shortcode+"/analytics?range=custom&from=2026-10-20&to=2026-10-20", nil)
+		req = req.WithContext(middleware.WithUserID(req.Context(), userID))
+		w := httptest.NewRecorder()
+		r := chi.NewRouter()
+		r.Get("/api/v1/links/{shortcode}/analytics", handler.GetLinkAnalytics)
+		r.ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Errorf("GetLinkAnalytics() status = %d, want 200", w.Code)
+		}
+	})
 
 	t.Run("analytics unavailable", func(t *testing.T) {
 		handler := &LinkHandler{

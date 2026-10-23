@@ -11,23 +11,53 @@ func TestParseFilterDefaultsAndValidation(t *testing.T) {
 		interval   string
 		want       Filter
 	}{
-		{"", "", Filter{Range30Days, IntervalDay}},
-		{"7d", "", Filter{Range7Days, IntervalDay}},
-		{"90d", "", Filter{Range90Days, IntervalWeek}},
-		{"12m", "", Filter{Range12Months, IntervalMonth}},
-		{"90d", "month", Filter{Range90Days, IntervalMonth}},
+		{"", "", Filter{Range: Range30Days, Interval: IntervalDay}},
+		{"7d", "", Filter{Range: Range7Days, Interval: IntervalDay}},
+		{"90d", "", Filter{Range: Range90Days, Interval: IntervalWeek}},
+		{"12m", "", Filter{Range: Range12Months, Interval: IntervalMonth}},
+		{"90d", "month", Filter{Range: Range90Days, Interval: IntervalMonth}},
 	} {
-		got, err := ParseFilter(tc.rangeValue, tc.interval)
+		got, err := ParseFilter(tc.rangeValue, tc.interval, "", "")
 		if err != nil || got != tc.want {
 			t.Errorf("ParseFilter(%q, %q) = %+v, %v; want %+v", tc.rangeValue, tc.interval, got, err, tc.want)
 		}
 	}
-	for _, tc := range []struct{ rangeValue, interval string }{
-		{"all", ""}, {"30d", "hour"}, {"30d", "WEEK"},
+	for _, tc := range []struct{ rangeValue, interval, from, to string }{
+		{"all", "", "", ""},
+		{"30d", "hour", "", ""},
+		{"30d", "WEEK", "", ""},
+		{"30d", "day", "2026-10-01", "2026-10-02"},
+		{"custom", "", "", "2026-10-02"},
+		{"custom", "", "2026-02-30", "2026-03-01"},
+		{"custom", "", "2026-10-02", "2026-10-01"},
+		{"custom", "", "2025-01-01", "2026-10-01"},
 	} {
-		if _, err := ParseFilter(tc.rangeValue, tc.interval); err == nil {
-			t.Errorf("ParseFilter(%q, %q) should reject invalid input", tc.rangeValue, tc.interval)
+		if _, err := ParseFilter(tc.rangeValue, tc.interval, tc.from, tc.to); err == nil {
+			t.Errorf("ParseFilter(%q, %q, %q, %q) should reject invalid input", tc.rangeValue, tc.interval, tc.from, tc.to)
 		}
+	}
+}
+
+func TestCustomFilterIncludesBothDatesAndSupportsOneDay(t *testing.T) {
+	filter, err := ParseFilter("custom", "", "2026-10-20", "2026-10-20")
+	if err != nil || filter.Interval != IntervalDay {
+		t.Fatalf("ParseFilter custom day = %+v, %v", filter, err)
+	}
+	since, until := filter.Bounds(time.Time{})
+	if since.Format(time.DateOnly) != "2026-10-20" || until.Format(time.RFC3339Nano) != "2026-10-20T23:59:59.999999999Z" {
+		t.Fatalf("custom day bounds = %v to %v", since, until)
+	}
+	rows := []ClicksOverTime{{Date: since, Clicks: 3}}
+	if buckets := filter.BucketClicks(rows, since, until); len(buckets) != 1 || buckets[0].Clicks != 3 {
+		t.Fatalf("custom day buckets = %+v", buckets)
+	}
+	filter, err = ParseFilter("custom", "week", "2026-10-20", "2026-11-03")
+	if err != nil {
+		t.Fatal(err)
+	}
+	since, until = filter.Bounds(time.Time{})
+	if buckets := filter.BucketClicks(nil, since, until); len(buckets) != 3 {
+		t.Fatalf("custom weekly buckets = %+v", buckets)
 	}
 }
 

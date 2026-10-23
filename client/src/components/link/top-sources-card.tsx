@@ -4,10 +4,10 @@ import { getReferrerIcon } from "@/lib/referrers";
 
 interface TopSourcesCardProps {
 	referrers: Array<{ referrer: string; clicks: number }>;
-	rangeLabel?: string;
+	periodLabel?: string;
 }
 
-export function TopSourcesCard({ referrers, rangeLabel = "30 days" }: TopSourcesCardProps) {
+export function TopSourcesCard({ referrers, periodLabel = "last 30 days" }: TopSourcesCardProps) {
 	const maxClicks = referrers.length > 0 ? Math.max(...referrers.map((d) => d.clicks)) : 0;
 
 	if (referrers.length === 0) {
@@ -15,7 +15,7 @@ export function TopSourcesCard({ referrers, rangeLabel = "30 days" }: TopSources
 			<Card className="h-full flex flex-col">
 				<CardHeader>
 					<CardTitle className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-						Top Sources (last {rangeLabel})
+						Top Sources ({periodLabel})
 					</CardTitle>
 				</CardHeader>
 				<CardContent className="flex-1 flex items-center justify-center">
@@ -32,7 +32,7 @@ export function TopSourcesCard({ referrers, rangeLabel = "30 days" }: TopSources
 		<Card className="h-full flex flex-col">
 			<CardHeader>
 				<CardTitle className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-						Top Sources (last {rangeLabel})
+						Top Sources ({periodLabel})
 				</CardTitle>
 			</CardHeader>
 			<CardContent className="flex-1">

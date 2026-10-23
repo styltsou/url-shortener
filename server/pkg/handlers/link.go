@@ -521,7 +521,8 @@ func (h *LinkHandler) GetLinkAnalytics(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *LinkHandler) analyticsFilter(w http.ResponseWriter, r *http.Request) (analytics.Filter, bool) {
-	filter, err := analytics.ParseFilter(r.URL.Query().Get("range"), r.URL.Query().Get("interval"))
+	query := r.URL.Query()
+	filter, err := analytics.ParseFilter(query.Get("range"), query.Get("interval"), query.Get("from"), query.Get("to"))
 	if err == nil {
 		return filter, true
 	}
@@ -529,7 +530,7 @@ func (h *LinkHandler) analyticsFilter(w http.ResponseWriter, r *http.Request) (a
 	render.Status(r, http.StatusBadRequest)
 	render.JSON(w, r, dto.ErrorResponse{Error: dto.ErrorObject{
 		Code: apperrors.CodeInvalidRequest, Title: "Invalid analytics filter",
-		Detail: "Use range=7d|30d|90d|12m and interval=day|week|month",
+		Detail: "Use range=7d|30d|90d|12m|custom and interval=day|week|month; custom requires from and to dates (YYYY-MM-DD) spanning at most 366 days",
 	}})
 	return analytics.Filter{}, false
 }
