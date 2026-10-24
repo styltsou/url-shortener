@@ -137,6 +137,7 @@ func New(config *config.Config, log logger.Logger) (*Server, error) {
 		MaxIdleConns:    config.ClickhouseMaxIdleConns,
 		ConnMaxLifetime: time.Duration(config.ClickhouseConnMaxLifeMin) * time.Minute, //nolint:gosec
 		TableName:       config.ClickhouseTableName,
+		RabbitURL:       config.RabbitMQURL,
 	}, s.Logger)
 	if analyticsErr != nil {
 		log.Warn("ClickHouse analytics unavailable at startup",

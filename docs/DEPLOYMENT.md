@@ -8,7 +8,9 @@ This guide describes a practical MVP deployment for the URL shortener.
 - **Backend:** Fly.io, Render, Railway, or a small container host.
 - **Database:** Managed PostgreSQL.
 - **Redis:** Managed Redis recommended for redirect latency. `REDIS_URL` is required by configuration; the API degrades safely if that endpoint is temporarily unavailable.
-- **ClickHouse:** Optional for MVP analytics. If unset or unavailable, analytics degrades safely.
+- **ClickHouse:** Stores click analytics.
+- **RabbitMQ:** A quorum queue with a persistent volume stores accepted click events until the worker writes them to ClickHouse.
+- **Click worker:** Run `./click-worker` from the backend image as a separate application.
 - **Auth:** Clerk production application.
 
 ## Required Backend Environment
@@ -40,7 +42,10 @@ CLICKHOUSE_URL=host:9000
 CLICKHOUSE_USERNAME=default
 CLICKHOUSE_PASSWORD=...
 CLICKHOUSE_TABLE_NAME=link4it.click_events
+RABBITMQ_URL=amqp://user:password@rabbitmq:5672/
 ```
+
+When `RABBITMQ_URL` is set, redirect requests hand clicks to the API's bounded in-memory queue and return immediately. Its background workers publish persistent messages to RabbitMQ and wait for publisher confirms. The click worker inserts batches into ClickHouse and acknowledges messages afterward. When RabbitMQ is unavailable or the in-memory queue fills, some click events are lost; redirects still succeed.
 
 ## Required Frontend Environment
 
@@ -53,20 +58,21 @@ VITE_SHORT_DOMAIN=https://your-short-domain.example
 ## Deployment Steps
 
 1. Provision PostgreSQL and run `server/scripts/migrate-up.sh` with `POSTGRES_CONNECTION_STRING` set and `psql` installed on the migration host. Run it again to confirm there are no pending migrations.
-2. Provision Redis and optionally ClickHouse. These can be managed services or separate VPS/Coolify/Dokploy services.
-3. Create a Clerk production app and configure OAuth callback URLs for the frontend domain.
-4. Deploy the backend container from `server/Dockerfile`.
-5. Deploy the frontend container from `client/Dockerfile`, or run `pnpm build` and serve `client/dist`.
-6. Configure DNS:
+2. Provision Redis, ClickHouse, and RabbitMQ. Keep RabbitMQ on a private network with a persistent volume.
+3. Run `./clickhouse-migrate up` from the backend image before deploying this API version or starting the click worker. The new migration adds `event_id` for duplicate-safe analytics queries.
+4. Create a Clerk production app and configure OAuth callback URLs for the frontend domain.
+5. Deploy the backend container from `server/Dockerfile` and run a second instance of the image with command `./click-worker`.
+6. Deploy the frontend container from `client/Dockerfile`, or run `pnpm build` and serve `client/dist`.
+7. Configure DNS:
    - App domain to frontend host.
    - API domain to backend host.
    - Short-link domain to backend host if separate from the API domain.
-7. Set `BASE_URL` and `VITE_SHORT_DOMAIN` to the public HTTPS short-link origin. Both should point to the backend redirect endpoint, including when the frontend uses a different domain.
-8. Set `CORS_ALLOWED_ORIGINS` to the exact frontend origin.
+8. Set `BASE_URL` and `VITE_SHORT_DOMAIN` to the public HTTPS short-link origin. Both should point to the backend redirect endpoint, including when the frontend uses a different domain.
+9. Set `CORS_ALLOWED_ORIGINS` to the exact frontend origin.
 
 ## Coolify / Dokploy Notes
 
-Deploy the backend and frontend as **separate applications**. Do not use `docker-compose.yml` for production; it is a local development stack with development credentials and bundled databases.
+Deploy the backend, click worker, and frontend as **separate applications**. Add private RabbitMQ and ClickHouse services with persistent volumes. Do not use `docker-compose.yml` for production; it is a local development stack with development credentials and bundled databases.
 
 For both applications:
 
@@ -80,6 +86,12 @@ Backend runtime environment:
 - Set the backend variables from "Required Backend Environment".
 - Expose port `8080`.
 - Use `/api/v1/health/ready` as the health check path.
+
+Click worker runtime environment:
+
+- Set `RABBITMQ_URL`, `CLICKHOUSE_URL`, `CLICKHOUSE_USERNAME`, `CLICKHOUSE_PASSWORD`, and `CLICKHOUSE_TABLE_NAME`.
+- Override the container command with `./click-worker` and do not expose a public port.
+- Monitor the `link4it.clicks` backlog and the `link4it.clicks.dead` dead-letter queue. Quorum queues on one Dokploy host are durable across process restarts but do not survive loss of that host or its volume.
 
 Frontend build environment:
 
@@ -100,6 +112,8 @@ Expose frontend port `80`. The frontend image includes an Nginx SPA fallback so 
 - PostgreSQL on `localhost:5432`
 - Redis on `localhost:6379`
 - ClickHouse on `localhost:9000` and `localhost:8123`
+- RabbitMQ management on `localhost:15672`
+- A click worker that consumes RabbitMQ
 - Backend on `localhost:8080`
 - Frontend on `localhost:5173`
 
@@ -116,7 +130,7 @@ Readiness behavior:
 
 - PostgreSQL unavailable or required tables missing: returns `503`.
 - Redis unavailable: returns `200` with `degraded: true` because redirects still work through Postgres.
-- Analytics is `disabled` when ClickHouse is not configured, `ok` when click delivery has not failed, or `degraded` after a startup connection failure or click loss. Analytics degradation keeps HTTP readiness at `200` while PostgreSQL is healthy. Check structured logs for cumulative lost-click counts; a lost event cannot be recovered from this in-memory queue.
+- Analytics is `disabled` when neither ClickHouse nor RabbitMQ is configured, `ok` when click delivery has not failed, or `degraded` after a startup connection failure or click loss. Analytics degradation keeps HTTP readiness at `200` while PostgreSQL is healthy. Check structured logs for cumulative lost-click counts. RabbitMQ publisher confirms happen in the background; a click lost before RabbitMQ accepts it cannot be recovered.
 
 ## Post-Deploy Smoke Test
 

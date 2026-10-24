@@ -23,6 +23,7 @@ type Config struct {
 	ClickhouseMaxIdleConns   int      `mapstructure:"CLICKHOUSE_MAX_IDLE_CONNS" validate:"omitempty,min=1"`
 	ClickhouseConnMaxLifeMin int      `mapstructure:"CLICKHOUSE_CONN_MAX_LIFE_MIN" validate:"omitempty,min=1"`
 	ClickhouseTableName      string   `mapstructure:"CLICKHOUSE_TABLE_NAME"`
+	RabbitMQURL              string   `mapstructure:"RABBITMQ_URL"`
 	RedisURL                 string   `mapstructure:"REDIS_URL" validate:"required"`
 	RedisUsername            string   `mapstructure:"REDIS_USERNAME" validate:"omitempty"`
 	RedisPassword            string   `mapstructure:"REDIS_PASSWORD" validate:"omitempty"`
@@ -150,6 +151,7 @@ func Load() (*Config, error) {
 	for _, key := range []string{
 		"POSTGRES_CONNECTION_STRING", "REDIS_URL", "REDIS_USERNAME", "REDIS_PASSWORD",
 		"CLERK_SECRET_KEY", "CLICKHOUSE_URL", "CLICKHOUSE_USERNAME", "CLICKHOUSE_PASSWORD",
+		"RABBITMQ_URL",
 	} {
 		if err := v.BindEnv(key); err != nil {
 			return nil, fmt.Errorf("bind %s: %w", key, err)

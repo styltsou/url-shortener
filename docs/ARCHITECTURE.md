@@ -203,6 +203,12 @@ Health checks:
 - `GET /api/v1/health` and `GET /api/v1/health/live` are liveness checks for process availability.
 - `GET /api/v1/health/ready` checks PostgreSQL connectivity and required tables. PostgreSQL failure or missing tables returns `503`; Redis failure and analytics delivery loss are reported as degraded because redirects can continue.
 
+### Click delivery
+
+When `RABBITMQ_URL` is configured, the redirect handler submits a click with a stable event ID to the API's bounded in-memory queue and immediately returns the redirect. Background workers publish persistent messages to the RabbitMQ quorum queue and wait for publisher confirms. Publish failures and queue overflow are counted as lost clicks. A separate `click-worker` process consumes up to 500 messages at a time, writes a ClickHouse batch, and acknowledges RabbitMQ after insertion. Failed inserts are requeued; malformed events and repeatedly failing messages go to the dead-letter queue.
+
+RabbitMQ redelivery can insert the same event more than once if the worker crashes between the ClickHouse write and acknowledgement. Analytics queries count distinct event IDs for queued events and count older rows without IDs individually. The broker makes accepted events durable across worker restarts; redirect events still have a best-effort window before broker acceptance.
+
 ## Data Flow
 
 ### Request → Response

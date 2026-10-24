@@ -40,6 +40,51 @@ services:
       timeout: 5s
       retries: 5
 
+  rabbitmq:
+    image: rabbitmq:4.1-management-alpine
+    environment:
+      RABBITMQ_DEFAULT_USER: link4it
+      RABBITMQ_DEFAULT_PASS: development-only
+    ports:
+      - "15672:15672"
+    volumes:
+      - rabbitdata:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  clickhouse-migrate:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    command: ["./clickhouse-migrate", "up"]
+    environment:
+      CLICKHOUSE_URL: clickhouse:9000
+      CLICKHOUSE_USERNAME: default
+      CLICKHOUSE_PASSWORD: ""
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+
+  click-worker:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    command: ["./click-worker"]
+    environment:
+      APP_ENV: development
+      RABBITMQ_URL: amqp://link4it:development-only@rabbitmq:5672/
+      CLICKHOUSE_URL: clickhouse:9000
+      CLICKHOUSE_USERNAME: default
+      CLICKHOUSE_PASSWORD: ""
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      clickhouse-migrate:
+        condition: service_completed_successfully
+
   server:
     build:
       context: .
@@ -57,6 +102,7 @@ services:
       CLICKHOUSE_URL: clickhouse:9000
       CLICKHOUSE_USERNAME: default
       CLICKHOUSE_PASSWORD: ""
+      RABBITMQ_URL: amqp://link4it:development-only@rabbitmq:5672/
       CLERK_SECRET_KEY: ${CLERK_SECRET_KEY:-}
       CORS_ALLOWED_ORIGINS: http://localhost:5173,http://localhost:3000
       RATE_LIMIT_REQUESTS: "0"
@@ -72,6 +118,10 @@ services:
       redis:
         condition: service_healthy
       clickhouse:
+        condition: service_healthy
+      clickhouse-migrate:
+        condition: service_completed_successfully
+      rabbitmq:
         condition: service_healthy
 
   client:
@@ -95,3 +145,4 @@ services:
 volumes:
   pgdata:
   chdata:
+  rabbitdata:

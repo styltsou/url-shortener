@@ -575,7 +575,11 @@ func (s *LinkService) GetOriginalURL(ctx context.Context, code string) (db.GetLi
 
 // RecordClick records a click event for analytics
 func (s *LinkService) RecordClick(ctx context.Context, linkID uuid.UUID, ip, userAgent, referrer string) {
+	if s.analyticsClient == nil {
+		return
+	}
 	s.analyticsClient.RecordClick(ctx, analytics.ClickEvent{
+		EventID:   uuid.New(),
 		LinkID:    linkID,
 		Timestamp: time.Now(),
 		IP:        ip,

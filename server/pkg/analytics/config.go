@@ -11,4 +11,5 @@ type Config struct {
 	MaxIdleConns    int
 	ConnMaxLifetime time.Duration
 	TableName       string
+	RabbitURL       string
 }
