@@ -107,7 +107,7 @@ func main() {
 }
 
 func ensureMigrationsTable(ctx context.Context, conn driver.Conn) error {
-	return conn.Exec(ctx, `
+	return execStatements(ctx, conn, `
 		CREATE DATABASE IF NOT EXISTS link4it;
 		CREATE TABLE IF NOT EXISTS link4it.schema_migrations (
 			version     String,

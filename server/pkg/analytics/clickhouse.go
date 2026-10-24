@@ -413,13 +413,13 @@ func (c *Client) getTotalClicks(ctx context.Context, linkID uuid.UUID, since, un
 	}
 	defer rows.Close()
 
-	var total int
+	var total uint64
 	for rows.Next() {
 		if err := rows.Scan(&total); err != nil {
 			return 0, fmt.Errorf("failed to scan total clicks: %w", err)
 		}
 	}
-	return total, nil
+	return clickCountToInt(total)
 }
 
 func (c *Client) getClicksOverTime(ctx context.Context, linkID uuid.UUID, since, until time.Time) ([]ClicksOverTime, error) {
@@ -438,8 +438,13 @@ func (c *Client) getClicksOverTime(ctx context.Context, linkID uuid.UUID, since,
 	var result []ClicksOverTime
 	for rows.Next() {
 		var stat ClicksOverTime
-		if err := rows.Scan(&stat.Date, &stat.Clicks); err != nil {
+		var clicks uint64
+		if err := rows.Scan(&stat.Date, &clicks); err != nil {
 			return nil, fmt.Errorf("failed to scan clicks over time: %w", err)
+		}
+		stat.Clicks, err = clickCountToInt(clicks)
+		if err != nil {
+			return nil, err
 		}
 		result = append(result, stat)
 	}
@@ -463,8 +468,13 @@ func (c *Client) getTopReferrers(ctx context.Context, linkID uuid.UUID, since, u
 	var result []ReferrerStat
 	for rows.Next() {
 		var stat ReferrerStat
-		if err := rows.Scan(&stat.Referrer, &stat.Clicks); err != nil {
+		var clicks uint64
+		if err := rows.Scan(&stat.Referrer, &clicks); err != nil {
 			return nil, fmt.Errorf("failed to scan referrer stat: %w", err)
+		}
+		stat.Clicks, err = clickCountToInt(clicks)
+		if err != nil {
+			return nil, err
 		}
 		result = append(result, stat)
 	}
@@ -488,8 +498,13 @@ func (c *Client) getTopUserAgents(ctx context.Context, linkID uuid.UUID, since, 
 	var result []UserAgentStat
 	for rows.Next() {
 		var stat UserAgentStat
-		if err := rows.Scan(&stat.UserAgent, &stat.Clicks); err != nil {
+		var clicks uint64
+		if err := rows.Scan(&stat.UserAgent, &clicks); err != nil {
 			return nil, fmt.Errorf("failed to scan user agent stat: %w", err)
+		}
+		stat.Clicks, err = clickCountToInt(clicks)
+		if err != nil {
+			return nil, err
 		}
 		result = append(result, stat)
 	}
@@ -538,13 +553,13 @@ func (c *Client) getUserTotalClicks(ctx context.Context, linkIDs []uuid.UUID, si
 	}
 	defer rows.Close()
 
-	var total int
+	var total uint64
 	for rows.Next() {
 		if err := rows.Scan(&total); err != nil {
 			return 0, fmt.Errorf("failed to scan user total clicks: %w", err)
 		}
 	}
-	return total, nil
+	return clickCountToInt(total)
 }
 
 func (c *Client) getUserClicksOverTime(ctx context.Context, linkIDs []uuid.UUID, since, until time.Time) ([]ClicksOverTime, error) {
@@ -563,12 +578,24 @@ func (c *Client) getUserClicksOverTime(ctx context.Context, linkIDs []uuid.UUID,
 	var result []ClicksOverTime
 	for rows.Next() {
 		var stat ClicksOverTime
-		if err := rows.Scan(&stat.Date, &stat.Clicks); err != nil {
+		var clicks uint64
+		if err := rows.Scan(&stat.Date, &clicks); err != nil {
 			return nil, fmt.Errorf("failed to scan user clicks over time: %w", err)
+		}
+		stat.Clicks, err = clickCountToInt(clicks)
+		if err != nil {
+			return nil, err
 		}
 		result = append(result, stat)
 	}
 	return result, nil
+}
+
+func clickCountToInt(count uint64) (int, error) {
+	if count > uint64(^uint(0)>>1) {
+		return 0, fmt.Errorf("click count %d exceeds the supported integer range", count)
+	}
+	return int(count), nil
 }
 
 // fillDailyClicks gives the chart one point per UTC date in the reporting window.

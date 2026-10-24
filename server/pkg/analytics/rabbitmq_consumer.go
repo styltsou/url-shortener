@@ -42,12 +42,14 @@ func consumeClicks(ctx context.Context, url string, writer ClickBatchWriter, log
 	if err != nil {
 		return err
 	}
-	defer conn.Close()
+	// Closing the connection also closes its channel and requeues any
+	// unacknowledged deliveries. Use a deadline because workers must be able to
+	// stop promptly when a deployment replaces them or RabbitMQ is unavailable.
+	defer func() { _ = conn.CloseDeadline(time.Now().Add(time.Second)) }()
 	channel, err := conn.Channel()
 	if err != nil {
 		return err
 	}
-	defer channel.Close()
 	if err := declareClickQueues(channel); err != nil {
 		return err
 	}

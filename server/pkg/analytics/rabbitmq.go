@@ -28,7 +28,6 @@ type rabbitPublisher struct {
 	mu      sync.Mutex
 	conn    *amqp.Connection
 	channel *amqp.Channel
-	returns chan amqp.Return
 }
 
 func newRabbitPublisher(url string) *rabbitPublisher {
@@ -103,7 +102,6 @@ func (p *rabbitPublisher) connect() error {
 	}
 	p.conn = conn
 	p.channel = channel
-	p.returns = channel.NotifyReturn(make(chan amqp.Return, 1))
 	return nil
 }
 
@@ -120,7 +118,7 @@ func (p *rabbitPublisher) Publish(ctx context.Context, event ClickEvent) error {
 	if err := p.connect(); err != nil {
 		return err
 	}
-	confirmation, err := p.channel.PublishWithDeferredConfirmWithContext(ctx, "", clickQueueName, true, false, amqp.Publishing{
+	confirmation, err := p.channel.PublishWithDeferredConfirmWithContext(ctx, "", clickQueueName, false, false, amqp.Publishing{
 		ContentType:  "application/json",
 		DeliveryMode: amqp.Persistent,
 		MessageId:    event.EventID.String(),
@@ -141,12 +139,7 @@ func (p *rabbitPublisher) Publish(ctx context.Context, event ClickEvent) error {
 		_ = p.closeLocked()
 		return errors.New("RabbitMQ rejected click event")
 	}
-	select {
-	case returned := <-p.returns:
-		return fmt.Errorf("RabbitMQ returned click event: %s", returned.ReplyText)
-	default:
-		return nil
-	}
+	return nil
 }
 
 func (p *rabbitPublisher) closeLocked() error {

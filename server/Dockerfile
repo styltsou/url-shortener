@@ -1,10 +1,11 @@
 # syntax=docker/dockerfile:1
 FROM golang:1.25-alpine AS builder
 WORKDIR /app
+ARG GOPROXY=https://proxy.golang.org,direct
 COPY server/go.mod server/go.sum ./server/
 RUN --mount=type=secret,id=ca_bundle \
   if [ -f /run/secrets/ca_bundle ]; then export SSL_CERT_FILE=/run/secrets/ca_bundle; fi; \
-  cd server && go mod download
+  cd server && GOPROXY="$GOPROXY" go mod download
 COPY server/ ./server/
 COPY docs/ ./docs/
 RUN --mount=type=secret,id=ca_bundle \

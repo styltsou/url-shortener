@@ -26,9 +26,9 @@ describe("analytics display", () => {
 		const { rerender } = render(<DashboardChart data={[]} analyticsAvailable={false} />);
 		expect(screen.getByText(/Analytics unavailable\. Click data/)).toBeTruthy();
 		rerender(<DashboardChart data={[]} analyticsAvailable />);
-		expect(screen.getByText("No clicks in the last 30 days.")).toBeTruthy();
+		expect(screen.getByText("No clicks in last 30 days.")).toBeTruthy();
 		rerender(<DashboardChart data={[{ name: "Oct 21", clicks: 0 }]} analyticsAvailable />);
-		expect(screen.getByText("No clicks in the last 30 days.")).toBeTruthy();
+		expect(screen.getByText("No clicks in last 30 days.")).toBeTruthy();
 	});
 
 	it("labels the link click total with its reporting period", () => {
@@ -45,7 +45,12 @@ describe("analytics display", () => {
 	});
 
 	it("serializes and labels a custom period, including one day", () => {
-		const period = { range: "custom", interval: "day", from: "2026-10-20", to: "2026-10-20" } as const;
+		const period = {
+			range: "custom",
+			interval: "day",
+			from: "2026-10-20",
+			to: "2026-10-20",
+		} as const;
 		expect(analyticsQueryString(period)).toBe(
 			"range=custom&interval=day&from=2026-10-20&to=2026-10-20",
 		);
@@ -74,7 +79,9 @@ describe("analytics display", () => {
 			to: "2026-10-23",
 		});
 		fireEvent.change(screen.getByLabelText("From"), { target: { value: "2026-10-24" } });
-		expect((screen.getByRole("button", { name: "Apply" }) as HTMLButtonElement).disabled).toBe(true);
+		expect((screen.getByRole("button", { name: "Apply" }) as HTMLButtonElement).disabled).toBe(
+			true,
+		);
 	});
 
 	it("formats analytics dates as calendar dates instead of repeating weekdays", () => {
